@@ -485,7 +485,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     ws2.onclose = handleClose;
     ws1.onerror = () => ws1.close();
     ws2.onerror = () => ws2.close();
-  }, [processDangerTransfer]);
+  }, [processDangerTransfer, terminal]);
 
   const startMonitoring = useCallback(async (tokenAddress: string) => {
     const s = settingsRef.current;
