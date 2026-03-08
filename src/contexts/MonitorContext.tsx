@@ -9,6 +9,7 @@ import {
   ERC20_ABI, KYBERSWAP_ROUTER, TRANSFER_SELECTOR, TRANSFER_TOPIC,
   MAX_DANGER_CARDS, MAX_WALLET_TRANSFERS, GAS_REFRESH_INTERVAL,
   KYBER_REFRESH_INTERVAL, PENDING_CLEANUP_INTERVAL, WS_RECONNECT_DELAY,
+  GAS_MULTIPLIER, GAS_DIVISOR, SWAP_GAS_LIMIT,
 } from "@/lib/constants";
 import { getKyberRoute, buildKyberSwap } from "@/lib/kyberswap";
 import { playAlertBeep } from "@/lib/audio";
@@ -112,7 +113,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     const refreshGas = async () => {
       try {
         const feeData = await provider.getFeeData();
-        const maxFee = (feeData.maxFeePerGas ?? 1000000000n) * 2n;
+        const maxFee = (feeData.maxFeePerGas ?? 1000000000n) * GAS_MULTIPLIER / GAS_DIVISOR;
         const maxPriority = feeData.maxPriorityFeePerGas
           ? (feeData.maxPriorityFeePerGas < maxFee ? feeData.maxPriorityFeePerGas : maxFee / 2n)
           : maxFee / 2n;
@@ -143,8 +144,8 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
 
       const gc = gasCache.current;
       prebuiltTx.current = {
-        to: routerAddress, data: encodedData, gasLimit: 500000n,
-        maxFeePerGas: gc?.maxFeePerGas ?? 2000000000n,
+        to: routerAddress, data: encodedData, gasLimit: SWAP_GAS_LIMIT,
+        maxFeePerGas: gc?.maxFeePerGas ?? 1100000000n,
         maxPriorityFeePerGas: gc?.maxPriorityFeePerGas ?? 1000000000n,
         type: 2,
       };
@@ -171,8 +172,8 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
         };
         const gc = gasCache.current;
         prebuiltTx.current = {
-          to: routerAddress, data: encodedData, gasLimit: 500000n,
-          maxFeePerGas: gc?.maxFeePerGas ?? 2000000000n,
+          to: routerAddress, data: encodedData, gasLimit: SWAP_GAS_LIMIT,
+          maxFeePerGas: gc?.maxFeePerGas ?? 1100000000n,
           maxPriorityFeePerGas: gc?.maxPriorityFeePerGas ?? 1000000000n,
           type: 2,
         };
@@ -314,14 +315,14 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
       const { encodedData, routerAddress } = await buildKyberSwap(routeSummary, wallet.address, 300);
       terminal("✅ Swap data built");
 
-      const maxFee = (feeData.maxFeePerGas ?? 1000000000n) * 2n;
+      const maxFee = (feeData.maxFeePerGas ?? 1000000000n) * GAS_MULTIPLIER / GAS_DIVISOR;
       const maxPriority = feeData.maxPriorityFeePerGas
         ? (feeData.maxPriorityFeePerGas < maxFee ? feeData.maxPriorityFeePerGas : maxFee / 2n)
         : maxFee / 2n;
 
       terminal("⚡ Executing sell transaction...");
       const tx = await wallet.sendTransaction({
-        to: routerAddress, data: encodedData, gasLimit: 500000n,
+        to: routerAddress, data: encodedData, gasLimit: SWAP_GAS_LIMIT,
         maxFeePerGas: maxFee, maxPriorityFeePerGas: maxPriority, type: 2,
       });
       terminal(`✅ SELL SUBMITTED: ${tx.hash}`);

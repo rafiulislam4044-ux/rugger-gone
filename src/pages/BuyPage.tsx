@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
 import { useMonitor } from "@/contexts/MonitorContext";
-import { ERC20_ABI, KYBERSWAP_ROUTER, WETH_BASE } from "@/lib/constants";
+import { ERC20_ABI, KYBERSWAP_ROUTER, WETH_BASE, GAS_MULTIPLIER, GAS_DIVISOR, SWAP_GAS_LIMIT } from "@/lib/constants";
 import { getAlchemyRpcUrl } from "@/lib/apiKeyRotation";
 
 interface BuyLog {
@@ -115,8 +115,8 @@ export default function BuyPage() {
         log("✅ WETH approved");
       }
 
-      // Gas
-      const maxFee = (feeData.maxFeePerGas ?? 1000000000n) * 2n;
+      // Gas — low fees, speed from parallel fetching
+      const maxFee = (feeData.maxFeePerGas ?? 1000000000n) * GAS_MULTIPLIER / GAS_DIVISOR;
       const maxPriority = feeData.maxPriorityFeePerGas
         ? (feeData.maxPriorityFeePerGas < maxFee ? feeData.maxPriorityFeePerGas : maxFee / 2n)
         : maxFee / 2n;
@@ -126,7 +126,7 @@ export default function BuyPage() {
       const tx = await wallet.sendTransaction({
         to: buildData.data.routerAddress,
         data: buildData.data.data,
-        gasLimit: 500000n,
+        gasLimit: SWAP_GAS_LIMIT,
         maxFeePerGas: maxFee,
         maxPriorityFeePerGas: maxPriority,
         type: 2,
