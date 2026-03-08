@@ -7,6 +7,7 @@ import { SnipeProvider } from "@/contexts/SnipeContext";
 import Header from "@/components/Header";
 import Index from "./pages/Index";
 import SnipeByPage from "./pages/SnipeByPage";
+import BuyPage from "./pages/BuyPage";
 import DataLogsPage from "./pages/DataLogsPage";
 import ManualPage from "./pages/ManualPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -27,6 +28,7 @@ const App = () => (
                 <Routes>
                   <Route path="/" element={<Index />} />
                   <Route path="/snipeby" element={<SnipeByPage />} />
+                  <Route path="/buy" element={<BuyPage />} />
                   <Route path="/DataLogs" element={<DataLogsPage />} />
                   <Route path="/manual" element={<ManualPage />} />
                   <Route path="/Settings" element={<SettingsPage />} />
