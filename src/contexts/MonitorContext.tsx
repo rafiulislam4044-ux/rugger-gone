@@ -224,37 +224,24 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     const wallet = getWallet(s.walletPrivateKey, provider);
     const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
 
-    // PATH A — Pre-built TX
+    // PATH A — Pre-built TX — FIRE IMMEDIATELY, no balance checks
     if (
       prebuiltTx.current && kyberCache.current &&
       kyberCache.current.tokenAddress.toLowerCase() === tokenAddress.toLowerCase()
     ) {
-      terminal("⚡ Pre-built KyberSwap TX found — fast sell path");
-
-      const balance = await tokenContract.balanceOf(wallet.address);
-      if (balance === 0n) { terminal("⚠️ No tokens found for this address"); return; }
-
-      const decimals = await tokenContract.decimals();
-      terminal(`💰 Balance: ${ethers.formatUnits(balance, decimals)} tokens`);
+      terminal("⚡ Pre-built KyberSwap TX found — firing INSTANTLY!");
 
       if (needsApprovalRef.current) {
         terminal("🔄 Approving KyberSwap router (one time only)...");
         const approveTx = await tokenContract.approve(KYBERSWAP_ROUTER, ethers.MaxUint256);
         await approveTx.wait();
-        terminal("✅ Approval confirmed — instant for all future sells");
+        terminal("✅ Approval confirmed");
         needsApprovalRef.current = false;
         setNeedsApproval(false);
         setSellReady(true);
       }
 
-      // Check balance drift >10%
-      const cachedBal = BigInt(kyberCache.current.balance);
-      const diff = balance > cachedBal ? balance - cachedBal : cachedBal - balance;
-      if (diff > cachedBal / 10n) {
-        terminal("🔄 Balance changed — refreshing route...");
-        await prefetchKyberSwapRoute(tokenAddress, wallet.address, provider);
-      }
-
+      // NO balance check, NO route rebuild — just fire the cached TX
       const gc = gasCache.current;
       const txToSend = {
         ...prebuiltTx.current,
@@ -262,7 +249,6 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
         maxPriorityFeePerGas: gc?.maxPriorityFeePerGas ?? prebuiltTx.current.maxPriorityFeePerGas,
       };
 
-      terminal("⚡ Firing pre-built KyberSwap transaction...");
       try {
         const tx = await wallet.sendTransaction(txToSend);
         terminal(`✅ SELL SUBMITTED: ${tx.hash}`);
@@ -275,8 +261,29 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
           updateSupabaseAfterSell("failed", null, tokenAddress, err.message);
         });
       } catch (err: unknown) {
-        terminal(`❌ Send failed: ${err instanceof Error ? err.message : 'Unknown'}`);
-        updateSupabaseAfterSell("failed", null, tokenAddress, err instanceof Error ? err.message : 'Unknown');
+        terminal(`❌ Pre-built TX failed: ${err instanceof Error ? err.message : 'Unknown'}`);
+        // If pre-built fails, do a quick fresh route WITHOUT balance drift check
+        terminal("🔄 Quick fallback — fresh route...");
+        try {
+          const balance = await tokenContract.balanceOf(wallet.address);
+          if (balance === 0n) { terminal("⚠️ No tokens left"); return; }
+          const routeSummary = await getKyberRoute(tokenAddress, balance.toString(), wallet.address);
+          const { encodedData, routerAddress } = await buildKyberSwap(routeSummary, wallet.address, 300);
+          const fallbackTx = await wallet.sendTransaction({
+            to: routerAddress, data: encodedData, gasLimit: SWAP_GAS_LIMIT,
+            maxFeePerGas: gc?.maxFeePerGas ?? 1100000000n,
+            maxPriorityFeePerGas: gc?.maxPriorityFeePerGas ?? 1000000000n,
+            type: 2,
+          });
+          terminal(`✅ FALLBACK SELL SUBMITTED: ${fallbackTx.hash}`);
+          fallbackTx.wait().then((receipt) => {
+            if (receipt) terminal(`✅ CONFIRMED in block ${receipt.blockNumber}`);
+            updateSupabaseAfterSell("success", fallbackTx.hash, tokenAddress);
+          }).catch(() => {});
+        } catch (err2: unknown) {
+          terminal(`❌ Fallback also failed: ${err2 instanceof Error ? err2.message : 'Unknown'}`);
+          updateSupabaseAfterSell("failed", null, tokenAddress, err2 instanceof Error ? err2.message : 'Unknown');
+        }
       }
       return;
     }
