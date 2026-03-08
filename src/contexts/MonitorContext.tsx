@@ -384,18 +384,47 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     addDangerTransfer(dt);
     playAlertBeep();
 
-    // AUTO-SELL FIRST — speed is critical, Supabase save is non-blocking
-    // Fire sell BEFORE saving to DB
+    // AUTO-SELL: Try pre-built TX first (instant ~1s), fresh route fallback (~3-4s)
     const s = settingsRef.current;
     if (s?.autoSellEnabled) {
       terminal("🚨🚨 DANGER DETECTED — INSTANT SELL FIRING!");
       
+      const provider = getProvider();
+      const wallet = getWallet(s.walletPrivateKey, provider);
+      const gc = gasCache.current;
+
+      // PATH A: Pre-built TX — fires in <1 second (works when balance unchanged = real rug)
+      if (
+        prebuiltTx.current && kyberCache.current &&
+        kyberCache.current.tokenAddress.toLowerCase() === tokenAddress.toLowerCase()
+      ) {
+        try {
+          const txToSend = {
+            ...prebuiltTx.current,
+            maxFeePerGas: gc?.maxFeePerGas ?? prebuiltTx.current.maxFeePerGas,
+            maxPriorityFeePerGas: gc?.maxPriorityFeePerGas ?? prebuiltTx.current.maxPriorityFeePerGas,
+          };
+          terminal("⚡ FIRING PRE-BUILT SELL TX — INSTANT!");
+          const tx = await wallet.sendTransaction(txToSend);
+          terminal(`✅ SELL SUBMITTED: ${tx.hash}`);
+          terminal(`🔗 basescan.org/tx/${tx.hash}`);
+          tx.wait().then((receipt) => {
+            if (receipt) terminal(`✅ SELL CONFIRMED in block ${receipt.blockNumber}`);
+            updateSupabaseAfterSell("success", tx.hash, tokenAddress);
+          }).catch((err: Error) => {
+            terminal(`⚠️ Confirmation issue: ${err.message}`);
+            updateSupabaseAfterSell("failed", null, tokenAddress, err.message);
+          });
+          // Pre-built worked — done!
+          return;
+        } catch (err: unknown) {
+          terminal(`⚠️ Pre-built TX failed (balance changed?) — fresh route fallback...`);
+        }
+      }
+
+      // PATH B: Fresh route — gets CURRENT balance (~3-4s, always accurate)
       try {
-        const provider = getProvider();
-        const wallet = getWallet(s.walletPrivateKey, provider);
         const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
-        
-        // Get CURRENT balance + gas in parallel (1 RPC round)
         const [balance, feeData] = await Promise.all([
           tokenContract.balanceOf(wallet.address),
           provider.getFeeData(),
@@ -409,8 +438,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
             ? (feeData.maxPriorityFeePerGas < maxFee ? feeData.maxPriorityFeePerGas : maxFee / 2n)
             : maxFee / 2n;
 
-          // Get fresh route for CURRENT balance (1 API call)
-          terminal("⚡ Getting route for current balance...");
+          terminal("⚡ Getting fresh route for current balance...");
           const routeSummary = await getKyberRoute(tokenAddress, balance.toString(), wallet.address);
           const { encodedData, routerAddress } = await buildKyberSwap(routeSummary, wallet.address, 300);
 
@@ -421,8 +449,6 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
           });
           terminal(`✅ SELL SUBMITTED: ${tx.hash}`);
           terminal(`🔗 basescan.org/tx/${tx.hash}`);
-
-          // Don't await confirmation — fire and forget
           tx.wait().then((receipt) => {
             if (receipt) terminal(`✅ SELL CONFIRMED in block ${receipt.blockNumber}`);
             updateSupabaseAfterSell("success", tx.hash, tokenAddress);
