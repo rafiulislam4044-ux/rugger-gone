@@ -2,6 +2,18 @@ import { Link, useLocation } from "react-router-dom";
 import { useMonitor } from "@/contexts/MonitorContext";
 import { useAuth } from "@/hooks/useAuth";
 
+function LogoutButton() {
+  const { signOut } = useAuth();
+  return (
+    <button
+      onClick={signOut}
+      className="ml-2 rounded-md bg-danger/20 px-3 py-1.5 font-display text-sm text-danger hover:bg-danger/30 transition-colors"
+    >
+      Logout
+    </button>
+  );
+}
+
 export default function Header() {
   const { status, tokenInfo, reconnectAttempt } = useMonitor();
   const location = useLocation();
