@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
+import { generateId } from "@/lib/utils";
 import { ethers } from "ethers";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -71,7 +72,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
   const addTerminalMessage = useCallback((text: string) => {
     setTerminalMessages((prev) => [
       ...prev.slice(-200),
-      { id: crypto.randomUUID(), text, timestamp: new Date() },
+      { id: generateId(), text, timestamp: new Date() },
     ]);
   }, []);
 

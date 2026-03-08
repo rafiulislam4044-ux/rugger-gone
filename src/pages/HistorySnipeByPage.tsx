@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { generateId } from "@/lib/utils";
 import { ethers } from "ethers";
 import { getAlchemyRpcUrl } from "@/lib/apiKeyRotation";
 
@@ -34,7 +35,7 @@ export default function HistorySnipeByPage() {
   }, [logs]);
 
   const addLog = (text: string, type: LogEntry["type"] = "info") => {
-    setLogs((prev) => [...prev, { id: crypto.randomUUID(), text, type, timestamp: new Date() }]);
+    setLogs((prev) => [...prev, { id: generateId(), text, type, timestamp: new Date() }]);
   };
 
   const scanWallet = async () => {
@@ -231,7 +232,7 @@ export default function HistorySnipeByPage() {
             }
 
             return {
-              id: crypto.randomUUID(),
+              id: generateId(),
               sourceWallet: addr,
               fundedWallet,
               ethAmount: entry.ethAmount,
