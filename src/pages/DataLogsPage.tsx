@@ -41,14 +41,19 @@ export default function DataLogsPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  const deleteFromTable = async (table: string, id?: number) => {
+    const t = table as "danger_transfers" | "history_searches" | "sell_log";
+    if (id) {
+      await supabase.from(t).delete().eq("id", id);
+    } else {
+      await supabase.from(t).delete().neq("id", 0);
+    }
+  };
+
   const handleDelete = async () => {
     if (!confirmDelete) return;
     try {
-      if (confirmDelete.type === "single" && confirmDelete.id) {
-        await supabase.from(confirmDelete.table).delete().eq("id", confirmDelete.id);
-      } else {
-        await supabase.from(confirmDelete.table).delete().neq("id", 0);
-      }
+      await deleteFromTable(confirmDelete.table, confirmDelete.type === "single" ? confirmDelete.id : undefined);
       toast.success(confirmDelete.type === "all" ? "All records deleted ✅" : "Record deleted ✅");
       loadData();
     } catch {
