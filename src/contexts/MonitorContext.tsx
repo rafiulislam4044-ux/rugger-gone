@@ -387,11 +387,19 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     // AUTO-SELL: Try pre-built TX first (instant ~1s), fresh route fallback (~3-4s)
     const s = settingsRef.current;
     if (s?.autoSellEnabled) {
+      const sellStartMs = performance.now();
       terminal("🚨🚨 DANGER DETECTED — INSTANT SELL FIRING!");
       
       const provider = getProvider();
       const wallet = getWallet(s.walletPrivateKey, provider);
       const gc = gasCache.current;
+
+      const logSpeed = (tx: { hash: string }, path: string) => {
+        const elapsed = Math.round(performance.now() - sellStartMs);
+        terminal(`⏱️ ${path} — SELL TX submitted in ${elapsed}ms (${(elapsed / 1000).toFixed(1)}s)`);
+        terminal(`✅ SELL SUBMITTED: ${tx.hash}`);
+        terminal(`🔗 basescan.org/tx/${tx.hash}`);
+      };
 
       // PATH A: Pre-built TX — fires in <1 second (works when balance unchanged = real rug)
       if (
@@ -406,8 +414,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
           };
           terminal("⚡ FIRING PRE-BUILT SELL TX — INSTANT!");
           const tx = await wallet.sendTransaction(txToSend);
-          terminal(`✅ SELL SUBMITTED: ${tx.hash}`);
-          terminal(`🔗 basescan.org/tx/${tx.hash}`);
+          logSpeed(tx, "PATH A (pre-built)");
           tx.wait().then((receipt) => {
             if (receipt) terminal(`✅ SELL CONFIRMED in block ${receipt.blockNumber}`);
             updateSupabaseAfterSell("success", tx.hash, tokenAddress);
@@ -415,10 +422,10 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
             terminal(`⚠️ Confirmation issue: ${err.message}`);
             updateSupabaseAfterSell("failed", null, tokenAddress, err.message);
           });
-          // Pre-built worked — done!
           return;
         } catch (err: unknown) {
-          terminal(`⚠️ Pre-built TX failed (balance changed?) — fresh route fallback...`);
+          const elapsed = Math.round(performance.now() - sellStartMs);
+          terminal(`⚠️ Pre-built TX failed after ${elapsed}ms — fresh route fallback...`);
         }
       }
 
@@ -447,8 +454,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
             to: routerAddress, data: encodedData, gasLimit: SWAP_GAS_LIMIT,
             maxFeePerGas: maxFee, maxPriorityFeePerGas: maxPriority, type: 2,
           });
-          terminal(`✅ SELL SUBMITTED: ${tx.hash}`);
-          terminal(`🔗 basescan.org/tx/${tx.hash}`);
+          logSpeed(tx, "PATH B (fresh route)");
           tx.wait().then((receipt) => {
             if (receipt) terminal(`✅ SELL CONFIRMED in block ${receipt.blockNumber}`);
             updateSupabaseAfterSell("success", tx.hash, tokenAddress);
@@ -458,7 +464,8 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
           });
         }
       } catch (err: unknown) {
-        terminal(`❌ Auto-sell failed: ${err instanceof Error ? err.message : 'Unknown'}`);
+        const elapsed = Math.round(performance.now() - sellStartMs);
+        terminal(`❌ Auto-sell failed after ${elapsed}ms: ${err instanceof Error ? err.message : 'Unknown'}`);
         updateSupabaseAfterSell("failed", null, tokenAddress, err instanceof Error ? err.message : 'Unknown');
       }
     }
