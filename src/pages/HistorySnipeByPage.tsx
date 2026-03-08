@@ -173,134 +173,75 @@ export default function HistorySnipeByPage() {
           const fundedWallet = entry.wallet;
           addLog(`Checking wallet: ${fundedWallet.slice(0, 10)}...`);
 
-        try {
-          // Get transactions FROM the funded wallet to find contract creation
-          const txListRes = await fetch(rpcUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              jsonrpc: "2.0",
-              id: 2,
-              method: "alchemy_getAssetTransfers",
-              params: [{
-                fromAddress: fundedWallet,
-                category: ["external", "erc20"],
-                order: "asc",
-                maxCount: "0x32", // 50
-                withMetadata: true,
-              }],
-            }),
-          });
+          try {
+            // Get transactions FROM the funded wallet to find contract creation
+            const txListRes = await fetch(rpcUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                jsonrpc: "2.0", id: 2,
+                method: "alchemy_getAssetTransfers",
+                params: [{ fromAddress: fundedWallet, category: ["external", "erc20"], order: "asc", maxCount: "0x14", withMetadata: true }],
+              }),
+            });
 
-          const txListData = await txListRes.json();
-          const fundedTxs = txListData?.result?.transfers || [];
+            const txListData = await txListRes.json();
+            const fundedTxs = txListData?.result?.transfers || [];
 
-          // Also check for contract deployments (to: null)
-          const deployRes = await fetch(rpcUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              jsonrpc: "2.0",
-              id: 3,
-              method: "alchemy_getAssetTransfers",
-              params: [{
-                fromAddress: fundedWallet,
-                category: ["internal"],
-                order: "asc",
-                maxCount: "0x14",
-                withMetadata: true,
-              }],
-            }),
-          });
+            let tokenCreated: string | null = null;
+            let tokenName: string | null = null;
+            let tokenSymbol: string | null = null;
 
-          const deployData = await deployRes.json();
-
-          // Check each tx for contract creation
-          let tokenCreated: string | null = null;
-          let tokenName: string | null = null;
-          let tokenSymbol: string | null = null;
-
-          // Check tx receipts for contract creation
-          for (const ftx of fundedTxs.slice(0, 5)) {
-            try {
-              const receipt = await provider.getTransactionReceipt(ftx.hash);
-              if (receipt && receipt.contractAddress) {
-                tokenCreated = receipt.contractAddress;
-                addLog(`🎯 Token created: ${tokenCreated}`, "success");
-
-                // Try to get token info
-                try {
-                  const tokenContract = new ethers.Contract(tokenCreated, [
-                    "function name() view returns (string)",
-                    "function symbol() view returns (string)",
-                  ], provider);
-                  const [name, symbol] = await Promise.all([
-                    tokenContract.name().catch(() => null),
-                    tokenContract.symbol().catch(() => null),
-                  ]);
-                  tokenName = name;
-                  tokenSymbol = symbol;
-                  addLog(`Token: ${name} (${symbol})`, "success");
-                } catch {}
-                break;
-              }
-            } catch {}
-          }
-
-          // Also check if funded wallet interacted with any new contracts
-          // by looking at internal txs that might be factory deployments
-          if (!tokenCreated) {
-            for (const itx of (deployData?.result?.transfers || []).slice(0, 5)) {
-              if (itx.to && itx.to !== fundedWallet) {
-                try {
-                  const code = await provider.getCode(itx.to);
-                  if (code && code.length > 10) {
-                    // It's a contract, check if it's a token
-                    try {
-                      const tokenContract = new ethers.Contract(itx.to, [
-                        "function name() view returns (string)",
-                        "function symbol() view returns (string)",
-                        "function totalSupply() view returns (uint256)",
-                      ], provider);
-                      const [name, symbol] = await Promise.all([
-                        tokenContract.name().catch(() => null),
-                        tokenContract.symbol().catch(() => null),
-                      ]);
-                      if (name && symbol) {
-                        tokenCreated = itx.to;
-                        tokenName = name;
-                        tokenSymbol = symbol;
-                        addLog(`🎯 Token found via factory: ${name} (${symbol})`, "success");
-                        break;
-                      }
-                    } catch {}
-                  }
-                } catch {}
-              }
+            // Check tx receipts for contract creation
+            for (const ftx of fundedTxs.slice(0, 5)) {
+              try {
+                const receipt = await provider.getTransactionReceipt(ftx.hash);
+                if (receipt && receipt.contractAddress) {
+                  tokenCreated = receipt.contractAddress;
+                  try {
+                    const tokenContract = new ethers.Contract(tokenCreated, [
+                      "function name() view returns (string)",
+                      "function symbol() view returns (string)",
+                    ], provider);
+                    const [name, symbol] = await Promise.all([
+                      tokenContract.name().catch(() => null),
+                      tokenContract.symbol().catch(() => null),
+                    ]);
+                    tokenName = name;
+                    tokenSymbol = symbol;
+                    addLog(`🎯 Token: ${name} (${symbol}) by ${fundedWallet.slice(0, 10)}`, "success");
+                  } catch {}
+                  break;
+                }
+              } catch {}
             }
+
+            return {
+              id: crypto.randomUUID(),
+              sourceWallet: addr,
+              fundedWallet,
+              ethAmount: entry.ethAmount,
+              txHash: entry.txHash,
+              timestamp: entry.timestamp,
+              tokenCreated,
+              tokenName,
+              tokenSymbol,
+              creatorWallet: tokenCreated ? fundedWallet : null,
+            } as FundingTrace;
+          } catch (err) {
+            addLog(`Error checking ${fundedWallet.slice(0, 10)}: ${err}`, "warn");
+            return null;
           }
+        })
+      );
 
-          foundTraces.push({
-            id: crypto.randomUUID(),
-            sourceWallet: addr,
-            fundedWallet,
-            ethAmount,
-            txHash,
-            timestamp,
-            tokenCreated,
-            tokenName,
-            tokenSymbol,
-            creatorWallet: tokenCreated ? fundedWallet : null,
-          });
+      const results = checkResults
+        .filter((r): r is PromiseFulfilledResult<FundingTrace | null> => r.status === "fulfilled" && r.value !== null)
+        .map(r => r.value!);
 
-          setTraces([...foundTraces]);
+      setTraces(results);
 
-        } catch (err) {
-          addLog(`Error checking ${fundedWallet.slice(0, 10)}: ${err}`, "warn");
-        }
-      }
-
-      addLog(`Scan complete. ${foundTraces.length} funded wallets found, ${foundTraces.filter(t => t.tokenCreated).length} created tokens.`, "success");
+      addLog(`Scan complete. ${results.length} wallets checked, ${results.filter(t => t.tokenCreated).length} created tokens.`, "success");
 
     } catch (err: any) {
       addLog(`Scan failed: ${err.message}`, "error");
