@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useRef, useCallback, useEff
 import { ethers } from "ethers";
 import { supabase } from "@/integrations/supabase/client";
 import { useMonitor } from "@/contexts/MonitorContext";
-import { ERC20_ABI, KYBERSWAP_ROUTER, WETH_BASE, GAS_REFRESH_INTERVAL } from "@/lib/constants";
+import { ERC20_ABI, KYBERSWAP_ROUTER, WETH_BASE, GAS_REFRESH_INTERVAL, GAS_MULTIPLIER, GAS_DIVISOR, SWAP_GAS_LIMIT } from "@/lib/constants";
 import { getKyberRoute, buildKyberSwap } from "@/lib/kyberswap";
 import { getAlchemyRpcUrl, getAlchemyWsUrl } from "@/lib/apiKeyRotation";
 
@@ -266,16 +266,16 @@ export function SnipeProvider({ children }: { children: React.ReactNode }) {
         addTerminalMessage("✅ WETH approved");
       }
 
-      // Gas
+      // Gas — low fees
       const gc = gasCacheRef.current;
-      const maxFee = gc?.maxFeePerGas ?? 2000000000n;
+      const maxFee = gc?.maxFeePerGas ?? 1100000000n;
       const maxPriority = gc?.maxPriorityFeePerGas ?? 1000000000n;
 
       addTerminalMessage("⚡ Firing buy transaction...");
       const tx = await wallet.sendTransaction({
         to: buildData.data.routerAddress,
         data: buildData.data.data,
-        gasLimit: 500000n,
+        gasLimit: SWAP_GAS_LIMIT,
         maxFeePerGas: maxFee,
         maxPriorityFeePerGas: maxPriority,
         type: 2,
@@ -448,7 +448,7 @@ export function SnipeProvider({ children }: { children: React.ReactNode }) {
     const refresh = async () => {
       try {
         const feeData = await provider.getFeeData();
-        const maxFee = (feeData.maxFeePerGas ?? 1000000000n) * 2n;
+        const maxFee = (feeData.maxFeePerGas ?? 1000000000n) * GAS_MULTIPLIER / GAS_DIVISOR;
         const maxPriority = feeData.maxPriorityFeePerGas
           ? (feeData.maxPriorityFeePerGas < maxFee ? feeData.maxPriorityFeePerGas : maxFee / 2n)
           : maxFee / 2n;

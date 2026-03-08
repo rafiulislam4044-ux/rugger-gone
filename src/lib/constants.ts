@@ -20,3 +20,9 @@ export const GAS_REFRESH_INTERVAL = 3000;
 export const KYBER_REFRESH_INTERVAL = 30000;
 export const PENDING_CLEANUP_INTERVAL = 300000;
 export const WS_RECONNECT_DELAY = 2000;
+
+// Gas optimization — low gas, speed from caching
+export const GAS_MULTIPLIER = 11n; // 1.1x (divide by 10)
+export const GAS_DIVISOR = 10n;
+export const SWAP_GAS_LIMIT = 250000n;
+export const APPROVE_GAS_LIMIT = 60000n;
