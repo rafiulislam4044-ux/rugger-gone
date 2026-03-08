@@ -432,30 +432,39 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
       setStatus("connected");
       setReconnectAttempt(0);
     };
-    ws2.onmessage = (event) => {
+    ws2.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data);
         if (data.params?.result) {
           const log = data.params.result;
           const hash = log.transactionHash;
 
-          // Check if we already have decoded data from WS1 (pending)
+          // Check if we already have decoded data from WS1 (pending — already verified as transfer() call)
           const pending = pendingTransfers.current[hash];
           if (pending) {
             delete pendingTransfers.current[hash];
             processDangerTransfer(pending.from, pending.to, pending.amount, hash, tokenAddress);
           } else {
-            // CRITICAL FIX: Decode Transfer event directly from confirmed log
-            // WS1 often misses pending txs — we must not silently drop confirmed transfers
+            // Fallback: decode from confirmed log, but ONLY if it's a direct transfer() call
+            // We must verify the tx input starts with 0xa9059cbb (transfer selector)
+            // This filters out swaps, buys, liquidity adds, etc.
             const topics = log.topics;
             if (topics && topics.length >= 3 && topics[0] === TRANSFER_TOPIC) {
-              const from = "0x" + topics[1].slice(26);
-              const to = "0x" + topics[2].slice(26);
-              const amount = log.data ? BigInt(log.data) : 0n;
-              if (amount > 0n) {
-                terminal(`🔍 Confirmed transfer detected (direct from log): ${from.slice(0, 10)}... → ${to.slice(0, 10)}...`);
-                processDangerTransfer(from, to, amount, hash, tokenAddress);
-              }
+              try {
+                const provider = getProvider();
+                const tx = await provider.getTransaction(hash);
+                if (!tx || !tx.data || !tx.data.startsWith(TRANSFER_SELECTOR)) {
+                  // Not a direct transfer() call — skip (swap, buy, etc.)
+                  return;
+                }
+                const from = "0x" + topics[1].slice(26);
+                const to = "0x" + topics[2].slice(26);
+                const amount = log.data ? BigInt(log.data) : 0n;
+                if (amount > 0n) {
+                  terminal(`🚨 Direct transfer detected: ${from.slice(0, 10)}... → ${to.slice(0, 10)}...`);
+                  processDangerTransfer(from, to, amount, hash, tokenAddress);
+                }
+              } catch { /* silent — tx lookup failed */ }
             }
           }
         }
