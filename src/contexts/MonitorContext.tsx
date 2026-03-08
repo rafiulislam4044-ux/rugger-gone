@@ -458,7 +458,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
           if (data?.is_monitoring && data.token_address) {
             ws1Ref.current?.close();
             ws2Ref.current?.close();
-            openWebSockets(data.token_address, apiKey);
+            openWebSockets(data.token_address);
           } else {
             setStatus("disconnected");
           }
