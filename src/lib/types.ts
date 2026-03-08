@@ -57,6 +57,7 @@ export interface PrebuiltTx {
 
 export interface AppSettings {
   alchemyApiKey: string;
+  alchemyApiKeys: string[];
   walletPrivateKey: string;
   autoSellEnabled: boolean;
 }

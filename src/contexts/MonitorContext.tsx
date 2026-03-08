@@ -12,6 +12,7 @@ import {
 } from "@/lib/constants";
 import { getKyberRoute, buildKyberSwap } from "@/lib/kyberswap";
 import { playAlertBeep } from "@/lib/audio";
+import { setApiKeys, getAlchemyRpcUrl, getAlchemyWsUrl, markKeyRateLimited } from "@/lib/apiKeyRotation";
 
 interface MonitorContextType {
   status: ConnectionStatus;
@@ -77,8 +78,17 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
   const loadSettings = useCallback(async (): Promise<AppSettings | null> => {
     const { data } = await supabase.from("settings").select("*").eq("id", 1).single();
     if (data && data.alchemy_api_key && data.wallet_private_key) {
+      const rawData = data as Record<string, unknown>;
+      const keys: string[] = (rawData.alchemy_api_keys as string[]) || [data.alchemy_api_key];
+      const validKeys = keys.filter((k: string) => k.trim().length > 0);
+      if (validKeys.length === 0) validKeys.push(data.alchemy_api_key);
+      
+      // Initialize API key rotation
+      setApiKeys(validKeys);
+      
       const s: AppSettings = {
-        alchemyApiKey: data.alchemy_api_key,
+        alchemyApiKey: validKeys[0],
+        alchemyApiKeys: validKeys,
         walletPrivateKey: data.wallet_private_key,
         autoSellEnabled: data.auto_sell_enabled ?? true,
       };
@@ -89,8 +99,9 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     return null;
   }, []);
 
-  const getProvider = useCallback((apiKey: string) => {
-    return new ethers.JsonRpcProvider(`https://base-mainnet.g.alchemy.com/v2/${apiKey}`);
+  const getProvider = useCallback((apiKey?: string) => {
+    const url = apiKey ? `https://base-mainnet.g.alchemy.com/v2/${apiKey}` : getAlchemyRpcUrl();
+    return new ethers.JsonRpcProvider(url);
   }, []);
 
   const getWallet = useCallback((privateKey: string, provider: ethers.JsonRpcProvider) => {
@@ -207,7 +218,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     const s = settingsRef.current;
     if (!s) { terminal("❌ No settings — go to /Settings first"); return; }
 
-    const provider = getProvider(s.alchemyApiKey);
+    const provider = getProvider();
     const wallet = getWallet(s.walletPrivateKey, provider);
     const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
 
@@ -380,8 +391,8 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     });
   }, [addDangerTransfer]);
 
-  const openWebSockets = useCallback((tokenAddress: string, apiKey: string) => {
-    const wsUrl = `wss://base-mainnet.g.alchemy.com/v2/${apiKey}`;
+  const openWebSockets = useCallback((tokenAddress: string, _apiKey?: string) => {
+    const wsUrl = getAlchemyWsUrl();
 
     // WS1 — Pending transactions
     const ws1 = new WebSocket(wsUrl);
@@ -447,7 +458,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
           if (data?.is_monitoring && data.token_address) {
             ws1Ref.current?.close();
             ws2Ref.current?.close();
-            openWebSockets(data.token_address, apiKey);
+            openWebSockets(data.token_address);
           } else {
             setStatus("disconnected");
           }
@@ -472,7 +483,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     setDangerTransfers([]);
     setSellsExecuted(0);
 
-    const provider = getProvider(s.alchemyApiKey);
+    const provider = getProvider();
     const wallet = getWallet(s.walletPrivateKey, provider);
 
     // STEP 1 — Token metadata
@@ -553,7 +564,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
 
     // STEP 3 — WebSockets
     terminal("🔄 Opening WebSocket connections...");
-    openWebSockets(tokenAddress, s.alchemyApiKey);
+    openWebSockets(tokenAddress);
   }, [getProvider, getWallet, startGasCache, prefetchKyberSwapRoute, startKyberRefresh, openWebSockets, terminal]);
 
   const stopMonitoring = useCallback(async () => {
