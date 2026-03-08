@@ -175,6 +175,7 @@ export type Database = {
       settings: {
         Row: {
           alchemy_api_key: string | null
+          alchemy_api_keys: string[] | null
           auto_sell_enabled: boolean | null
           id: number
           updated_at: string | null
@@ -182,6 +183,7 @@ export type Database = {
         }
         Insert: {
           alchemy_api_key?: string | null
+          alchemy_api_keys?: string[] | null
           auto_sell_enabled?: boolean | null
           id?: number
           updated_at?: string | null
@@ -189,6 +191,7 @@ export type Database = {
         }
         Update: {
           alchemy_api_key?: string | null
+          alchemy_api_keys?: string[] | null
           auto_sell_enabled?: boolean | null
           id?: number
           updated_at?: string | null
