@@ -377,22 +377,8 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     addDangerTransfer(dt);
     playAlertBeep();
 
-    // Save to Supabase
-    await supabase.from("danger_transfers").insert({
-      token_address: dt.tokenAddress,
-      token_name: dt.tokenName,
-      token_symbol: dt.tokenSymbol,
-      from_wallet: dt.fromWallet,
-      to_wallet: dt.toWallet,
-      amount: dt.amount,
-      tx_hash: dt.txHash,
-      wallet_position: dt.walletPosition,
-      transfer_count: dt.transferCount,
-      sell_status: "pending",
-      source: "live",
-    });
-
-    // AUTO-SELL: Fire pre-built TX instantly (1-2 seconds)
+    // AUTO-SELL FIRST — speed is critical, Supabase save is non-blocking
+    // Fire sell BEFORE saving to DB to save 2-3 seconds
     const s = settingsRef.current;
     if (s?.autoSellEnabled) {
       terminal("🚨🚨 DANGER DETECTED — INSTANT SELL FIRING!");
@@ -436,7 +422,22 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
       terminal("🔄 No pre-built TX — using fast sell fallback...");
       executeSellFast(tokenAddress);
     }
-  }, [addDangerTransfer]);
+
+    // Save to Supabase AFTER sell fires — non-blocking, don't await
+    supabase.from("danger_transfers").insert({
+      token_address: dt.tokenAddress,
+      token_name: dt.tokenName,
+      token_symbol: dt.tokenSymbol,
+      from_wallet: dt.fromWallet,
+      to_wallet: dt.toWallet,
+      amount: dt.amount,
+      tx_hash: dt.txHash,
+      wallet_position: dt.walletPosition,
+      transfer_count: dt.transferCount,
+      sell_status: "pending",
+      source: "live",
+    }).then(() => {});
+  }, [addDangerTransfer, getProvider, getWallet, terminal, executeSellFast, updateSupabaseAfterSell]);
 
   const openWebSockets = useCallback((tokenAddress: string, _apiKey?: string) => {
     const wsUrl = getAlchemyWsUrl();
@@ -490,26 +491,27 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
             delete pendingTransfers.current[hash];
             processDangerTransfer(pending.from, pending.to, pending.amount, hash, tokenAddress);
           } else {
-            // Fallback: decode from confirmed log, but ONLY if it's a direct transfer() call
-            // We must verify the tx input starts with 0xa9059cbb (transfer selector)
-            // This filters out swaps, buys, liquidity adds, etc.
+            // Fallback: decode directly from log topics — NO slow RPC call
+            // Process immediately, verify in background if needed
             const topics = log.topics;
             if (topics && topics.length >= 3 && topics[0] === TRANSFER_TOPIC) {
-              try {
-                const provider = getProvider();
-                const tx = await provider.getTransaction(hash);
-                if (!tx || !tx.data || !tx.data.startsWith(TRANSFER_SELECTOR)) {
-                  // Not a direct transfer() call — skip (swap, buy, etc.)
-                  return;
-                }
-                const from = "0x" + topics[1].slice(26);
-                const to = "0x" + topics[2].slice(26);
-                const amount = log.data ? BigInt(log.data) : 0n;
-                if (amount > 0n) {
-                  terminal(`🚨 Direct transfer detected: ${from.slice(0, 10)}... → ${to.slice(0, 10)}...`);
-                  processDangerTransfer(from, to, amount, hash, tokenAddress);
-                }
-              } catch { /* silent — tx lookup failed */ }
+              const from = "0x" + topics[1].slice(26);
+              const to = "0x" + topics[2].slice(26);
+              const amount = log.data ? BigInt(log.data) : 0n;
+              if (amount > 0n) {
+                // Quick check: if 'to' is a known DEX router, skip it
+                const toLower = to.toLowerCase();
+                const knownRouters = [
+                  KYBERSWAP_ROUTER.toLowerCase(),
+                  "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad", // Uniswap Universal Router
+                  "0x2626664c2603336e57b271c5c0b26f421741e481", // Uniswap V3 Router
+                  "0x198ef79f1f515f02dfe9e3115ed9fc07183f02fc", // Aerodrome
+                ];
+                if (knownRouters.includes(toLower)) return; // DEX swap, not direct transfer
+                
+                terminal(`🚨 Direct transfer detected: ${from.slice(0, 10)}... → ${to.slice(0, 10)}...`);
+                processDangerTransfer(from, to, amount, hash, tokenAddress);
+              }
             }
           }
         }
