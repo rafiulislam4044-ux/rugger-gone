@@ -446,24 +446,37 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
       } catch { /* ignore */ }
     };
 
-    // Reconnect handling
+    // Reconnect handling with retry loop
     const handleClose = () => {
       if (!monitoringTokenRef.current) return;
       setStatus("reconnecting");
       let attempt = 0;
+      const maxRetries = 10;
       const reconnect = () => {
         attempt++;
+        if (attempt > maxRetries) {
+          terminal(`❌ Max reconnect attempts (${maxRetries}) reached. Stopping.`);
+          setStatus("disconnected");
+          return;
+        }
         setReconnectAttempt(attempt);
+        const delay = Math.min(WS_RECONNECT_DELAY * attempt, 15000); // backoff up to 15s
+        terminal(`🔄 Reconnect attempt ${attempt}/${maxRetries} in ${delay / 1000}s...`);
         setTimeout(async () => {
-          const { data } = await supabase.from("monitor_state").select("*").eq("id", 1).single();
-          if (data?.is_monitoring && data.token_address) {
-            ws1Ref.current?.close();
-            ws2Ref.current?.close();
-            openWebSockets(data.token_address);
-          } else {
-            setStatus("disconnected");
+          if (!monitoringTokenRef.current) return;
+          try {
+            const { data } = await supabase.from("monitor_state").select("*").eq("id", 1).single();
+            if (data?.is_monitoring && data.token_address) {
+              ws1Ref.current?.close();
+              ws2Ref.current?.close();
+              openWebSockets(data.token_address);
+            } else {
+              setStatus("disconnected");
+            }
+          } catch {
+            reconnect(); // retry on network error
           }
-        }, WS_RECONNECT_DELAY);
+        }, delay);
       };
       reconnect();
     };
@@ -472,7 +485,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     ws2.onclose = handleClose;
     ws1.onerror = () => ws1.close();
     ws2.onerror = () => ws2.close();
-  }, [processDangerTransfer]);
+  }, [processDangerTransfer, terminal]);
 
   const startMonitoring = useCallback(async (tokenAddress: string) => {
     const s = settingsRef.current;
