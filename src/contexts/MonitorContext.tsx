@@ -392,90 +392,49 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
       source: "live",
     });
 
-    // AUTO-SELL: Immediately sell 100% of holdings with 100% slippage
+    // AUTO-SELL: Fire pre-built TX instantly (1-2 seconds)
     const s = settingsRef.current;
     if (s?.autoSellEnabled) {
-      terminal("🚨🚨 DANGER DETECTED — AUTO-SELLING 100% NOW!");
-      try {
-        const provider = getProvider();
-        const wallet = getWallet(s.walletPrivateKey, provider);
-        const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
+      terminal("🚨🚨 DANGER DETECTED — INSTANT SELL FIRING!");
+      
+      // PATH A: Use pre-built TX — fires in <1 second
+      if (
+        prebuiltTx.current && kyberCache.current &&
+        kyberCache.current.tokenAddress.toLowerCase() === tokenAddress.toLowerCase()
+      ) {
+        try {
+          const provider = getProvider();
+          const wallet = getWallet(s.walletPrivateKey, provider);
+          
+          const gc = gasCache.current;
+          const txToSend = {
+            ...prebuiltTx.current,
+            maxFeePerGas: gc?.maxFeePerGas ?? prebuiltTx.current.maxFeePerGas,
+            maxPriorityFeePerGas: gc?.maxPriorityFeePerGas ?? prebuiltTx.current.maxPriorityFeePerGas,
+          };
 
-        const [balance, decimals] = await Promise.all([
-          tokenContract.balanceOf(wallet.address),
-          tokenContract.decimals(),
-        ]);
+          terminal("⚡ FIRING PRE-BUILT SELL TX — INSTANT!");
+          const tx = await wallet.sendTransaction(txToSend);
+          terminal(`✅ SELL SUBMITTED: ${tx.hash}`);
+          terminal(`🔗 basescan.org/tx/${tx.hash}`);
 
-        if (balance === 0n) {
-          terminal("⚠️ No tokens to sell — balance is 0");
+          // Don't await confirmation — fire and forget for speed
+          tx.wait().then((receipt) => {
+            if (receipt) terminal(`✅ SELL CONFIRMED in block ${receipt.blockNumber}`);
+            updateSupabaseAfterSell("success", tx.hash, tokenAddress);
+          }).catch((err: Error) => {
+            terminal(`⚠️ Confirmation issue: ${err.message}`);
+            updateSupabaseAfterSell("failed", null, tokenAddress, err.message);
+          });
           return;
+        } catch (err: unknown) {
+          terminal(`⚠️ Pre-built TX failed: ${err instanceof Error ? err.message : 'Unknown'} — fallback...`);
         }
-
-        terminal(`💰 Selling ${ethers.formatUnits(balance, decimals)} ${ti.symbol}...`);
-
-        // Check/do approval
-        const allowance = await tokenContract.allowance(wallet.address, KYBERSWAP_ROUTER);
-        if (allowance < balance) {
-          terminal("🔄 Approving KyberSwap router...");
-          const approveTx = await tokenContract.approve(KYBERSWAP_ROUTER, ethers.MaxUint256);
-          await approveTx.wait();
-          terminal("✅ Approved");
-        }
-
-        // Get route with 100% slippage (10000 bps)
-        const routeSummary = await getKyberRoute(tokenAddress, balance.toString(), wallet.address);
-        const buildRes = await fetch(
-          `https://aggregator-api.kyberswap.com/base/api/v1/route/build`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-client-id": "rug-detector" },
-            body: JSON.stringify({
-              routeSummary,
-              sender: wallet.address,
-              recipient: wallet.address,
-              slippageTolerance: 10000, // 100% slippage
-              ignoreCappedSlippage: true,
-              deadline: Math.floor(Date.now() / 1000) + 120,
-            }),
-          }
-        );
-        const buildData = await buildRes.json();
-        if (!buildData.data?.data) {
-          terminal("❌ Failed to build sell route — trying executeSellFast fallback...");
-          await executeSellFast(tokenAddress);
-          return;
-        }
-
-        const feeData = await provider.getFeeData();
-        const maxFee = (feeData.maxFeePerGas ?? 1000000000n) * GAS_MULTIPLIER / GAS_DIVISOR;
-        const maxPriority = feeData.maxPriorityFeePerGas
-          ? (feeData.maxPriorityFeePerGas < maxFee ? feeData.maxPriorityFeePerGas : maxFee / 2n)
-          : maxFee / 2n;
-
-        terminal("⚡ FIRING SELL TX...");
-        const tx = await wallet.sendTransaction({
-          to: buildData.data.routerAddress,
-          data: buildData.data.data,
-          gasLimit: SWAP_GAS_LIMIT,
-          maxFeePerGas: maxFee,
-          maxPriorityFeePerGas: maxPriority,
-          type: 2,
-        });
-
-        terminal(`✅ SELL SUBMITTED: ${tx.hash}`);
-        terminal(`🔗 basescan.org/tx/${tx.hash}`);
-
-        tx.wait().then((receipt) => {
-          if (receipt) terminal(`✅ SELL CONFIRMED in block ${receipt.blockNumber}`);
-          updateSupabaseAfterSell("success", tx.hash, tokenAddress);
-        }).catch((err: Error) => {
-          terminal(`⚠️ Confirmation issue: ${err.message}`);
-          updateSupabaseAfterSell("failed", null, tokenAddress, err.message);
-        });
-      } catch (err: unknown) {
-        terminal(`❌ Auto-sell failed: ${err instanceof Error ? err.message : 'Unknown'} — trying fallback...`);
-        executeSellFast(tokenAddress);
       }
+      
+      // PATH B: No pre-built TX available — use executeSellFast
+      terminal("🔄 No pre-built TX — using fast sell fallback...");
+      executeSellFast(tokenAddress);
     }
   }, [addDangerTransfer]);
 
