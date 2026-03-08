@@ -391,8 +391,8 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     });
   }, [addDangerTransfer]);
 
-  const openWebSockets = useCallback((tokenAddress: string, apiKey: string) => {
-    const wsUrl = `wss://base-mainnet.g.alchemy.com/v2/${apiKey}`;
+  const openWebSockets = useCallback((tokenAddress: string, _apiKey?: string) => {
+    const wsUrl = getAlchemyWsUrl();
 
     // WS1 — Pending transactions
     const ws1 = new WebSocket(wsUrl);
