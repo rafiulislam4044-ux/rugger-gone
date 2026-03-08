@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
+import { generateId } from "@/lib/utils";
 import { ethers } from "ethers";
 import { supabase } from "@/integrations/supabase/client";
 import {

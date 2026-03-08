@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { generateId } from "@/lib/utils";
 import { ethers } from "ethers";
 import { useMonitor } from "@/contexts/MonitorContext";
 import { ERC20_ABI, KYBERSWAP_ROUTER, WETH_BASE, GAS_MULTIPLIER, GAS_DIVISOR, SWAP_GAS_LIMIT } from "@/lib/constants";
