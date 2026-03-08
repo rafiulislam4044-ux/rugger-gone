@@ -18,31 +18,43 @@ interface SellRow {
   amount_sold: string | null; sell_tx_hash: string | null;
   status: string; error_message: string | null; executed_at: string | null;
 }
+interface SnipeBuyRow {
+  id: number; source_wallet: string; funded_wallet: string;
+  token_address: string; token_name: string | null; token_symbol: string | null;
+  buy_amount_eth: string | null; buy_tx_hash: string | null;
+  buy_price_eth: string | null; current_price_eth: string | null;
+  pnl_percent: number | null; status: string;
+  profit_taken: boolean | null; stop_loss_triggered: boolean | null;
+  created_at: string | null;
+}
 
-type TabKey = "danger" | "history" | "sell";
+type TabKey = "danger" | "history" | "sell" | "snipe";
 
 export default function DataLogsPage() {
   const [tab, setTab] = useState<TabKey>("danger");
   const [dangers, setDangers] = useState<DangerRow[]>([]);
   const [histories, setHistories] = useState<HistoryRow[]>([]);
   const [sells, setSells] = useState<SellRow[]>([]);
+  const [snipes, setSnipes] = useState<SnipeBuyRow[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<{ type: "single" | "all"; table: string; id?: number } | null>(null);
 
   const loadData = useCallback(async () => {
-    const [d, h, s] = await Promise.all([
+    const [d, h, s, sn] = await Promise.all([
       supabase.from("danger_transfers").select("*").order("detected_at", { ascending: false }),
       supabase.from("history_searches").select("*").order("searched_at", { ascending: false }),
       supabase.from("sell_log").select("*").order("executed_at", { ascending: false }),
+      supabase.from("snipe_buys").select("*").order("created_at", { ascending: false }),
     ]);
     if (d.data) setDangers(d.data);
     if (h.data) setHistories(h.data);
     if (s.data) setSells(s.data);
+    if (sn.data) setSnipes(sn.data);
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   const deleteFromTable = async (table: string, id?: number) => {
-    const t = table as "danger_transfers" | "history_searches" | "sell_log";
+    const t = table as "danger_transfers" | "history_searches" | "sell_log" | "snipe_buys";
     if (id) {
       await supabase.from(t).delete().eq("id", id);
     } else {
@@ -66,6 +78,7 @@ export default function DataLogsPage() {
     { key: "danger", label: "Danger Transfers", icon: "🚨" },
     { key: "history", label: "History Searches", icon: "🔵" },
     { key: "sell", label: "Sell Log", icon: "🤖" },
+    { key: "snipe", label: "Snipe Buys", icon: "🎯" },
   ];
 
   const successSells = sells.filter((s) => s.status === "success").length;
@@ -108,7 +121,7 @@ export default function DataLogsPage() {
         <button
           onClick={() => setConfirmDelete({
             type: "all",
-            table: tab === "danger" ? "danger_transfers" : tab === "history" ? "history_searches" : "sell_log",
+            table: tab === "danger" ? "danger_transfers" : tab === "history" ? "history_searches" : tab === "snipe" ? "snipe_buys" : "sell_log",
           })}
           className="rounded-md bg-danger/20 px-3 py-1.5 text-xs text-danger hover:bg-danger/30"
         >
@@ -182,6 +195,35 @@ export default function DataLogsPage() {
               )}
               {s.error_message && <div className="text-danger">Error: {s.error_message}</div>}
               <div>Time: {s.executed_at ? new Date(s.executed_at).toLocaleString() : "—"}</div>
+            </div>
+          </div>
+        ))}
+
+        {tab === "snipe" && snipes.map((sn) => (
+          <div key={sn.id} className="rounded-lg border border-border bg-card p-4 font-mono text-xs">
+            <div className="flex items-start justify-between mb-2">
+              <span className="text-accent font-bold">🎯 SNIPE BUY</span>
+              <button
+                onClick={() => setConfirmDelete({ type: "single", table: "snipe_buys", id: sn.id })}
+                className="text-danger hover:text-danger/80 text-xs"
+              >🗑️</button>
+            </div>
+            <div className="space-y-1">
+              <div>Token: {sn.token_name || "Unknown"} ({sn.token_symbol || "???"})</div>
+              <div className="break-all">Address: {sn.token_address}</div>
+              <div>Buy: {sn.buy_amount_eth} ETH</div>
+              <div>Current Value: {sn.current_price_eth || "—"} ETH</div>
+              <div className={`font-bold ${(sn.pnl_percent ?? 0) > 0 ? "text-success" : (sn.pnl_percent ?? 0) < 0 ? "text-danger" : ""}`}>
+                P&L: {sn.pnl_percent != null ? `${sn.pnl_percent > 0 ? "+" : ""}${sn.pnl_percent.toFixed(1)}%` : "—"}
+              </div>
+              <div>Status: {sn.status === "success" ? "✅ BOUGHT" : sn.status === "pending" ? "⏳" : sn.status === "submitted" ? "📤" : "❌"}</div>
+              {sn.profit_taken && <div className="text-success">💰 Profit taken</div>}
+              {sn.stop_loss_triggered && <div className="text-danger">🛑 Stop-loss triggered</div>}
+              <div>Source: {sn.source_wallet.slice(0, 10)}... → {sn.funded_wallet.slice(0, 10)}...</div>
+              {sn.buy_tx_hash && (
+                <div>TX: <a href={`https://basescan.org/tx/${sn.buy_tx_hash}`} target="_blank" rel="noopener noreferrer" className="text-secondary hover:underline">{sn.buy_tx_hash.slice(0, 24)}...</a></div>
+              )}
+              <div>Time: {sn.created_at ? new Date(sn.created_at).toLocaleString() : "—"}</div>
             </div>
           </div>
         ))}

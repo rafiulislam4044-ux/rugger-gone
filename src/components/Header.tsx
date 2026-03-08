@@ -7,6 +7,7 @@ export default function Header() {
 
   const navItems = [
     { path: "/", label: "Home" },
+    { path: "/snipeby", label: "SnipeBuy" },
     { path: "/DataLogs", label: "DataLogs" },
     { path: "/manual", label: "Manual" },
     { path: "/Settings", label: "Settings" },
