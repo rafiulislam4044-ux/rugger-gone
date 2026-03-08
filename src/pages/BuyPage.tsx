@@ -25,7 +25,7 @@ export default function BuyPage() {
   }, [logs]);
 
   const log = useCallback((text: string) => {
-    setLogs((prev) => [...prev.slice(-200), { id: crypto.randomUUID(), text, timestamp: new Date() }]);
+    setLogs((prev) => [...prev.slice(-200), { id: generateId(), text, timestamp: new Date() }]);
   }, []);
 
   const executeBuy = useCallback(async () => {

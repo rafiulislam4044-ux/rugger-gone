@@ -71,7 +71,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
   const addTerminalMessage = useCallback((text: string) => {
     setTerminalMessages((prev) => [
       ...prev.slice(-200),
-      { id: crypto.randomUUID(), text, timestamp: new Date() },
+      { id: generateId(), text, timestamp: new Date() },
     ]);
   }, []);
 
