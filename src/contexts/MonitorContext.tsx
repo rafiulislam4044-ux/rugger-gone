@@ -483,7 +483,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     setDangerTransfers([]);
     setSellsExecuted(0);
 
-    const provider = getProvider(s.alchemyApiKey);
+    const provider = getProvider();
     const wallet = getWallet(s.walletPrivateKey, provider);
 
     // STEP 1 — Token metadata
@@ -564,7 +564,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
 
     // STEP 3 — WebSockets
     terminal("🔄 Opening WebSocket connections...");
-    openWebSockets(tokenAddress, s.alchemyApiKey);
+    openWebSockets(tokenAddress);
   }, [getProvider, getWallet, startGasCache, prefetchKyberSwapRoute, startKyberRefresh, openWebSockets, terminal]);
 
   const stopMonitoring = useCallback(async () => {
