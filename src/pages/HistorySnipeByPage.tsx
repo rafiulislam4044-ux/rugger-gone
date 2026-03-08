@@ -114,10 +114,14 @@ export default function HistorySnipeByPage() {
 
       const foundTraces: FundingTrace[] = [];
 
-      // Step 2: For each funded wallet, check if it deployed a contract (token)
-      for (const tx of fundingTransfers) {
-        const fundedWallet = tx.to;
-        addLog(`Checking funded wallet: ${fundedWallet.slice(0, 10)}...`);
+      // Step 2: For each recipient wallet, check if it deployed a contract (token)
+      for (const recipientAddr of allUniqueRecipients) {
+        const fundedWallet = recipientAddr;
+        const matchingTx = transfers.find((t: any) => t.to?.toLowerCase() === recipientAddr);
+        const ethAmount = matchingTx?.value?.toString() || "0";
+        const txHash = matchingTx?.hash || "";
+        const timestamp = matchingTx?.metadata?.blockTimestamp || "";
+        addLog(`Checking wallet: ${fundedWallet.slice(0, 10)}...`);
 
         try {
           // Get transactions FROM the funded wallet to find contract creation
