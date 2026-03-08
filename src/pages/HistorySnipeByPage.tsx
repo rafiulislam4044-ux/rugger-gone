@@ -119,169 +119,129 @@ export default function HistorySnipeByPage() {
 
       addLog(`Found ${outTransfers.length} outgoing + ${inTransfers.length} incoming transfers`);
 
-      // Collect all unique related wallets
-      const allUniqueWallets = new Set<string>();
-      const walletTxMap: Record<string, { ethAmount: string; txHash: string; timestamp: string; direction: string }> = {};
+      // Collect unique wallets that RECEIVED funds (outgoing transfers) — latest 7 only
+      const seenWallets = new Set<string>();
+      const latestFunded: { wallet: string; ethAmount: string; txHash: string; timestamp: string }[] = [];
 
-      // Outgoing: recipient wallets
-      for (const t of outTransfers) {
-        if (t.to && t.to.toLowerCase() !== addr.toLowerCase()) {
-          const w = t.to.toLowerCase();
-          allUniqueWallets.add(w);
-          if (!walletTxMap[w]) walletTxMap[w] = { ethAmount: t.value?.toString() || "0", txHash: t.hash, timestamp: t.metadata?.blockTimestamp || "", direction: "OUT" };
+      // Sort outgoing by most recent first
+      const allOut = [...outTransfers].sort((a: any, b: any) =>
+        new Date(b.metadata?.blockTimestamp || 0).getTime() - new Date(a.metadata?.blockTimestamp || 0).getTime()
+      );
+
+      for (const t of allOut) {
+        if (latestFunded.length >= 7) break;
+        const to = t.to?.toLowerCase();
+        if (to && to !== addr.toLowerCase() && !seenWallets.has(to)) {
+          seenWallets.add(to);
+          latestFunded.push({
+            wallet: to,
+            ethAmount: t.value?.toString() || "0",
+            txHash: t.hash,
+            timestamp: t.metadata?.blockTimestamp || "",
+          });
         }
       }
 
-      // Incoming: sender wallets
-      for (const t of inTransfers) {
-        if (t.from && t.from.toLowerCase() !== addr.toLowerCase()) {
-          const w = t.from.toLowerCase();
-          allUniqueWallets.add(w);
-          if (!walletTxMap[w]) walletTxMap[w] = { ethAmount: t.value?.toString() || "0", txHash: t.hash, timestamp: t.metadata?.blockTimestamp || "", direction: "IN" };
+      // If no outgoing, check incoming senders instead (latest 7)
+      if (latestFunded.length === 0) {
+        const allIn = [...inTransfers].sort((a: any, b: any) =>
+          new Date(b.metadata?.blockTimestamp || 0).getTime() - new Date(a.metadata?.blockTimestamp || 0).getTime()
+        );
+        for (const t of allIn) {
+          if (latestFunded.length >= 7) break;
+          const from = t.from?.toLowerCase();
+          if (from && from !== addr.toLowerCase() && !seenWallets.has(from)) {
+            seenWallets.add(from);
+            latestFunded.push({
+              wallet: from,
+              ethAmount: t.value?.toString() || "0",
+              txHash: t.hash,
+              timestamp: t.metadata?.blockTimestamp || "",
+            });
+          }
         }
+        addLog(`No outgoing found. Checking latest ${latestFunded.length} incoming senders instead`);
       }
 
-      addLog(`${allUniqueWallets.size} unique related wallets to check`);
+      addLog(`Checking latest ${latestFunded.length} funded wallets for token creation...`);
 
       const foundTraces: FundingTrace[] = [];
 
-      // Step 2: For each related wallet, check if it deployed a contract (token)
-      for (const walletAddr of allUniqueWallets) {
-        const fundedWallet = walletAddr;
-        const info = walletTxMap[walletAddr] || { ethAmount: "0", txHash: "", timestamp: "", direction: "?" };
-        const ethAmount = info.ethAmount;
-        const txHash = info.txHash;
-        const timestamp = info.timestamp;
-        addLog(`Checking wallet (${info.direction}): ${fundedWallet.slice(0, 10)}...`);
+      // Check all 7 wallets IN PARALLEL for speed
+      const checkResults = await Promise.allSettled(
+        latestFunded.map(async (entry) => {
+          const fundedWallet = entry.wallet;
+          addLog(`Checking wallet: ${fundedWallet.slice(0, 10)}...`);
 
-        try {
-          // Get transactions FROM the funded wallet to find contract creation
-          const txListRes = await fetch(rpcUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              jsonrpc: "2.0",
-              id: 2,
-              method: "alchemy_getAssetTransfers",
-              params: [{
-                fromAddress: fundedWallet,
-                category: ["external", "erc20"],
-                order: "asc",
-                maxCount: "0x32", // 50
-                withMetadata: true,
-              }],
-            }),
-          });
+          try {
+            // Get transactions FROM the funded wallet to find contract creation
+            const txListRes = await fetch(rpcUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                jsonrpc: "2.0", id: 2,
+                method: "alchemy_getAssetTransfers",
+                params: [{ fromAddress: fundedWallet, category: ["external", "erc20"], order: "asc", maxCount: "0x14", withMetadata: true }],
+              }),
+            });
 
-          const txListData = await txListRes.json();
-          const fundedTxs = txListData?.result?.transfers || [];
+            const txListData = await txListRes.json();
+            const fundedTxs = txListData?.result?.transfers || [];
 
-          // Also check for contract deployments (to: null)
-          const deployRes = await fetch(rpcUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              jsonrpc: "2.0",
-              id: 3,
-              method: "alchemy_getAssetTransfers",
-              params: [{
-                fromAddress: fundedWallet,
-                category: ["internal"],
-                order: "asc",
-                maxCount: "0x14",
-                withMetadata: true,
-              }],
-            }),
-          });
+            let tokenCreated: string | null = null;
+            let tokenName: string | null = null;
+            let tokenSymbol: string | null = null;
 
-          const deployData = await deployRes.json();
-
-          // Check each tx for contract creation
-          let tokenCreated: string | null = null;
-          let tokenName: string | null = null;
-          let tokenSymbol: string | null = null;
-
-          // Check tx receipts for contract creation
-          for (const ftx of fundedTxs.slice(0, 5)) {
-            try {
-              const receipt = await provider.getTransactionReceipt(ftx.hash);
-              if (receipt && receipt.contractAddress) {
-                tokenCreated = receipt.contractAddress;
-                addLog(`🎯 Token created: ${tokenCreated}`, "success");
-
-                // Try to get token info
-                try {
-                  const tokenContract = new ethers.Contract(tokenCreated, [
-                    "function name() view returns (string)",
-                    "function symbol() view returns (string)",
-                  ], provider);
-                  const [name, symbol] = await Promise.all([
-                    tokenContract.name().catch(() => null),
-                    tokenContract.symbol().catch(() => null),
-                  ]);
-                  tokenName = name;
-                  tokenSymbol = symbol;
-                  addLog(`Token: ${name} (${symbol})`, "success");
-                } catch {}
-                break;
-              }
-            } catch {}
-          }
-
-          // Also check if funded wallet interacted with any new contracts
-          // by looking at internal txs that might be factory deployments
-          if (!tokenCreated) {
-            for (const itx of (deployData?.result?.transfers || []).slice(0, 5)) {
-              if (itx.to && itx.to !== fundedWallet) {
-                try {
-                  const code = await provider.getCode(itx.to);
-                  if (code && code.length > 10) {
-                    // It's a contract, check if it's a token
-                    try {
-                      const tokenContract = new ethers.Contract(itx.to, [
-                        "function name() view returns (string)",
-                        "function symbol() view returns (string)",
-                        "function totalSupply() view returns (uint256)",
-                      ], provider);
-                      const [name, symbol] = await Promise.all([
-                        tokenContract.name().catch(() => null),
-                        tokenContract.symbol().catch(() => null),
-                      ]);
-                      if (name && symbol) {
-                        tokenCreated = itx.to;
-                        tokenName = name;
-                        tokenSymbol = symbol;
-                        addLog(`🎯 Token found via factory: ${name} (${symbol})`, "success");
-                        break;
-                      }
-                    } catch {}
-                  }
-                } catch {}
-              }
+            // Check tx receipts for contract creation
+            for (const ftx of fundedTxs.slice(0, 5)) {
+              try {
+                const receipt = await provider.getTransactionReceipt(ftx.hash);
+                if (receipt && receipt.contractAddress) {
+                  tokenCreated = receipt.contractAddress;
+                  try {
+                    const tokenContract = new ethers.Contract(tokenCreated, [
+                      "function name() view returns (string)",
+                      "function symbol() view returns (string)",
+                    ], provider);
+                    const [name, symbol] = await Promise.all([
+                      tokenContract.name().catch(() => null),
+                      tokenContract.symbol().catch(() => null),
+                    ]);
+                    tokenName = name;
+                    tokenSymbol = symbol;
+                    addLog(`🎯 Token: ${name} (${symbol}) by ${fundedWallet.slice(0, 10)}`, "success");
+                  } catch {}
+                  break;
+                }
+              } catch {}
             }
+
+            return {
+              id: crypto.randomUUID(),
+              sourceWallet: addr,
+              fundedWallet,
+              ethAmount: entry.ethAmount,
+              txHash: entry.txHash,
+              timestamp: entry.timestamp,
+              tokenCreated,
+              tokenName,
+              tokenSymbol,
+              creatorWallet: tokenCreated ? fundedWallet : null,
+            } as FundingTrace;
+          } catch (err) {
+            addLog(`Error checking ${fundedWallet.slice(0, 10)}: ${err}`, "warn");
+            return null;
           }
+        })
+      );
 
-          foundTraces.push({
-            id: crypto.randomUUID(),
-            sourceWallet: addr,
-            fundedWallet,
-            ethAmount,
-            txHash,
-            timestamp,
-            tokenCreated,
-            tokenName,
-            tokenSymbol,
-            creatorWallet: tokenCreated ? fundedWallet : null,
-          });
+      const results = checkResults
+        .filter((r): r is PromiseFulfilledResult<FundingTrace | null> => r.status === "fulfilled" && r.value !== null)
+        .map(r => r.value!);
 
-          setTraces([...foundTraces]);
+      setTraces(results);
 
-        } catch (err) {
-          addLog(`Error checking ${fundedWallet.slice(0, 10)}: ${err}`, "warn");
-        }
-      }
-
-      addLog(`Scan complete. ${foundTraces.length} funded wallets found, ${foundTraces.filter(t => t.tokenCreated).length} created tokens.`, "success");
+      addLog(`Scan complete. ${results.length} wallets checked, ${results.filter(t => t.tokenCreated).length} created tokens.`, "success");
 
     } catch (err: any) {
       addLog(`Scan failed: ${err.message}`, "error");
