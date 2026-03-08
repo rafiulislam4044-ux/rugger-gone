@@ -377,22 +377,8 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     addDangerTransfer(dt);
     playAlertBeep();
 
-    // Save to Supabase
-    await supabase.from("danger_transfers").insert({
-      token_address: dt.tokenAddress,
-      token_name: dt.tokenName,
-      token_symbol: dt.tokenSymbol,
-      from_wallet: dt.fromWallet,
-      to_wallet: dt.toWallet,
-      amount: dt.amount,
-      tx_hash: dt.txHash,
-      wallet_position: dt.walletPosition,
-      transfer_count: dt.transferCount,
-      sell_status: "pending",
-      source: "live",
-    });
-
-    // AUTO-SELL: Fire pre-built TX instantly (1-2 seconds)
+    // AUTO-SELL FIRST — speed is critical, Supabase save is non-blocking
+    // Fire sell BEFORE saving to DB to save 2-3 seconds
     const s = settingsRef.current;
     if (s?.autoSellEnabled) {
       terminal("🚨🚨 DANGER DETECTED — INSTANT SELL FIRING!");
