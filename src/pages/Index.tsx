@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ERC20_ABI, TRANSFER_SELECTOR } from "@/lib/constants";
 import { DangerTransfer, WalletInfo } from "@/lib/types";
 import { playAlertBeep } from "@/lib/audio";
+import { getAlchemyRpcUrl } from "@/lib/apiKeyRotation";
 
 export default function IndexPage() {
   const {
@@ -53,9 +54,7 @@ export default function IndexPage() {
     setHistoryLoading(true);
     setHistoryResults([]);
 
-    const provider = new ethers.JsonRpcProvider(
-      `https://base-mainnet.g.alchemy.com/v2/${settings.alchemyApiKey}`
-    );
+    const provider = new ethers.JsonRpcProvider(getAlchemyRpcUrl());
 
     try {
       const body: Record<string, unknown> = {
@@ -67,7 +66,7 @@ export default function IndexPage() {
       if (historyWalletAddr.trim()) body.fromAddress = historyWalletAddr.trim();
 
       const res = await fetch(
-        `https://base-mainnet.g.alchemy.com/v2/${settings.alchemyApiKey}`,
+        getAlchemyRpcUrl(),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
