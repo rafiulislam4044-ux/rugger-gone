@@ -471,8 +471,8 @@ export function SnipeProvider({ children }: { children: React.ReactNode }) {
         .from("snipe_buys")
         .select("*")
         .eq("status", "success")
-        .eq("profit_taken", false)
-        .eq("stop_loss_triggered", false);
+        .or("profit_taken.is.null,profit_taken.eq.false")
+        .or("stop_loss_triggered.is.null,stop_loss_triggered.eq.false");
 
       if (!activeBuys?.length) return;
 
@@ -509,15 +509,33 @@ export function SnipeProvider({ children }: { children: React.ReactNode }) {
           // Profit-take check
           if (pnlPercent >= cfg.profit_take_percent) {
             addTerminalMessage(`💰 PROFIT TARGET HIT: ${buy.token_symbol} at +${pnlPercent.toFixed(1)}%`);
-            addTerminalMessage(`🔄 Selling ${cfg.profit_sell_percent}% of holdings...`);
-
-            // Sell partial: calculate amount to sell
-            const sellAmount = (balance * BigInt(cfg.profit_sell_percent)) / 100n;
-            // Use executeSellFast for the sell (sells all — for partial we'd need custom logic)
-            await executeSellFast(buy.token_address);
+            
+            if (cfg.profit_sell_percent >= 100) {
+              // Sell all
+              addTerminalMessage(`🔄 Selling 100% of holdings...`);
+              await executeSellFast(buy.token_address);
+            } else {
+              // Partial sell — build custom route for partial amount
+              addTerminalMessage(`🔄 Selling ${cfg.profit_sell_percent}% of holdings...`);
+              const sellAmount = (balance * BigInt(cfg.profit_sell_percent)) / 100n;
+              try {
+                const routeSummary = await getKyberRoute(buy.token_address, sellAmount.toString(), wallet.address);
+                const { encodedData, routerAddress } = await buildKyberSwap(routeSummary, wallet.address, 300);
+                const gc = gasCacheRef.current;
+                const tx = await wallet.sendTransaction({
+                  to: routerAddress, data: encodedData, gasLimit: SWAP_GAS_LIMIT,
+                  maxFeePerGas: gc?.maxFeePerGas ?? 1100000000n,
+                  maxPriorityFeePerGas: gc?.maxPriorityFeePerGas ?? 1000000000n,
+                  type: 2,
+                });
+                addTerminalMessage(`✅ PARTIAL SELL SUBMITTED: ${tx.hash}`);
+              } catch (sellErr) {
+                addTerminalMessage(`❌ Partial sell failed: ${sellErr instanceof Error ? sellErr.message : 'Unknown'}`);
+              }
+            }
 
             await supabase.from("snipe_buys").update({ profit_taken: true }).eq("id", buy.id);
-            logActivity(buy.token_address, "profit_taken", `Sold at +${pnlPercent.toFixed(1)}%`);
+            logActivity(buy.token_address, "profit_taken", `Sold ${cfg.profit_sell_percent}% at +${pnlPercent.toFixed(1)}%`);
           }
 
           // Stop-loss check
