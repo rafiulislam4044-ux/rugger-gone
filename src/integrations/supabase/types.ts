@@ -14,7 +14,188 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      danger_transfers: {
+        Row: {
+          amount: string
+          detected_at: string | null
+          from_wallet: string
+          id: number
+          sell_status: string | null
+          sell_triggered: boolean | null
+          sell_tx_hash: string | null
+          source: string | null
+          to_wallet: string
+          token_address: string
+          token_name: string | null
+          token_symbol: string | null
+          transfer_count: number | null
+          tx_hash: string | null
+          wallet_position: number | null
+        }
+        Insert: {
+          amount: string
+          detected_at?: string | null
+          from_wallet: string
+          id?: never
+          sell_status?: string | null
+          sell_triggered?: boolean | null
+          sell_tx_hash?: string | null
+          source?: string | null
+          to_wallet: string
+          token_address: string
+          token_name?: string | null
+          token_symbol?: string | null
+          transfer_count?: number | null
+          tx_hash?: string | null
+          wallet_position?: number | null
+        }
+        Update: {
+          amount?: string
+          detected_at?: string | null
+          from_wallet?: string
+          id?: never
+          sell_status?: string | null
+          sell_triggered?: boolean | null
+          sell_tx_hash?: string | null
+          source?: string | null
+          to_wallet?: string
+          token_address?: string
+          token_name?: string | null
+          token_symbol?: string | null
+          transfer_count?: number | null
+          tx_hash?: string | null
+          wallet_position?: number | null
+        }
+        Relationships: []
+      }
+      history_searches: {
+        Row: {
+          id: number
+          results_count: number | null
+          searched_at: string | null
+          token_address: string
+          wallet_address: string | null
+        }
+        Insert: {
+          id?: never
+          results_count?: number | null
+          searched_at?: string | null
+          token_address: string
+          wallet_address?: string | null
+        }
+        Update: {
+          id?: never
+          results_count?: number | null
+          searched_at?: string | null
+          token_address?: string
+          wallet_address?: string | null
+        }
+        Relationships: []
+      }
+      monitor_state: {
+        Row: {
+          id: number
+          is_monitoring: boolean
+          started_at: string | null
+          token_address: string | null
+          token_decimals: number | null
+          token_name: string | null
+          token_symbol: string | null
+          total_supply: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: number
+          is_monitoring?: boolean
+          started_at?: string | null
+          token_address?: string | null
+          token_decimals?: number | null
+          token_name?: string | null
+          token_symbol?: string | null
+          total_supply?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: number
+          is_monitoring?: boolean
+          started_at?: string | null
+          token_address?: string | null
+          token_decimals?: number | null
+          token_name?: string | null
+          token_symbol?: string | null
+          total_supply?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      sell_log: {
+        Row: {
+          amount_sold: string | null
+          danger_transfer_id: number | null
+          error_message: string | null
+          executed_at: string | null
+          id: number
+          sell_tx_hash: string | null
+          status: string
+          token_address: string
+          token_name: string | null
+        }
+        Insert: {
+          amount_sold?: string | null
+          danger_transfer_id?: number | null
+          error_message?: string | null
+          executed_at?: string | null
+          id?: never
+          sell_tx_hash?: string | null
+          status?: string
+          token_address: string
+          token_name?: string | null
+        }
+        Update: {
+          amount_sold?: string | null
+          danger_transfer_id?: number | null
+          error_message?: string | null
+          executed_at?: string | null
+          id?: never
+          sell_tx_hash?: string | null
+          status?: string
+          token_address?: string
+          token_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sell_log_danger_transfer_id_fkey"
+            columns: ["danger_transfer_id"]
+            isOneToOne: false
+            referencedRelation: "danger_transfers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      settings: {
+        Row: {
+          alchemy_api_key: string | null
+          auto_sell_enabled: boolean | null
+          id: number
+          updated_at: string | null
+          wallet_private_key: string | null
+        }
+        Insert: {
+          alchemy_api_key?: string | null
+          auto_sell_enabled?: boolean | null
+          id?: number
+          updated_at?: string | null
+          wallet_private_key?: string | null
+        }
+        Update: {
+          alchemy_api_key?: string | null
+          auto_sell_enabled?: boolean | null
+          id?: number
+          updated_at?: string | null
+          wallet_private_key?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
