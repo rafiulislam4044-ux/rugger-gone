@@ -60,7 +60,7 @@ export default function HistorySnipeByPage() {
       const provider = new ethers.JsonRpcProvider(rpcUrl);
 
       // Step 1: Get all outgoing ETH transfers using Alchemy asset transfers API
-      addLog("Fetching outgoing ETH transfers...");
+      addLog("Fetching ALL outgoing transfers (ETH + WETH + ERC20 + internal)...");
       const transfersRes = await fetch(rpcUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -70,7 +70,7 @@ export default function HistorySnipeByPage() {
           method: "alchemy_getAssetTransfers",
           params: [{
             fromAddress: addr,
-            category: ["external"],
+            category: ["external", "internal", "erc20"],
             order: "desc",
             maxCount: "0x64", // 100
             withMetadata: true,
@@ -81,14 +81,36 @@ export default function HistorySnipeByPage() {
       const transfersData = await transfersRes.json();
       const transfers = transfersData?.result?.transfers || [];
 
-      addLog(`Found ${transfers.length} outgoing transfers`);
+      addLog(`Found ${transfers.length} outgoing transfers total`);
 
-      // Filter: ETH transfers > 0.001 ETH (funding-like)
-      const fundingTransfers = transfers.filter(
-        (t: any) => t.value && t.value > 0.001 && t.asset === "ETH"
-      );
+      // Filter: ETH or WETH transfers > 0.001 (funding-like)
+      const WETH_ADDR = "0x4200000000000000000000000000000000000006".toLowerCase();
+      const fundingTransfers = transfers.filter((t: any) => {
+        if (!t.value || t.value <= 0.001) return false;
+        // Native ETH
+        if (t.asset === "ETH") return true;
+        // WETH transfers
+        if (t.rawContract?.address?.toLowerCase() === WETH_ADDR) return true;
+        // Any transfer with significant ETH value
+        if (t.category === "internal" && t.value > 0.001) return true;
+        return false;
+      });
 
-      addLog(`${fundingTransfers.length} look like wallet funding (> 0.001 ETH)`);
+      // Also get ALL transfers to unique wallets (even small ERC20) to find funded wallets
+      const allUniqueRecipients = new Set<string>();
+      for (const t of transfers) {
+        if (t.to && t.to.toLowerCase() !== addr.toLowerCase()) {
+          allUniqueRecipients.add(t.to.toLowerCase());
+        }
+      }
+
+      // Merge funding transfers recipients
+      for (const t of fundingTransfers) {
+        if (t.to) allUniqueRecipients.add(t.to.toLowerCase());
+      }
+
+      addLog(`${fundingTransfers.length} look like wallet funding (> 0.001 ETH/WETH)`);
+      addLog(`${allUniqueRecipients.size} unique recipient wallets to check`);
 
       const foundTraces: FundingTrace[] = [];
 
