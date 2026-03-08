@@ -218,7 +218,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     const s = settingsRef.current;
     if (!s) { terminal("❌ No settings — go to /Settings first"); return; }
 
-    const provider = getProvider(s.alchemyApiKey);
+    const provider = getProvider();
     const wallet = getWallet(s.walletPrivateKey, provider);
     const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
 
