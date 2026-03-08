@@ -436,7 +436,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
       transfer_count: dt.transferCount,
       sell_status: "pending",
       source: "live",
-    }).then(() => {}).catch(() => {});
+    }).then(() => {});
   }, [addDangerTransfer, getProvider, getWallet, terminal, executeSellFast, updateSupabaseAfterSell]);
 
   const openWebSockets = useCallback((tokenAddress: string, _apiKey?: string) => {
