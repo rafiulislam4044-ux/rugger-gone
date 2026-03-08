@@ -12,6 +12,7 @@ import {
 } from "@/lib/constants";
 import { getKyberRoute, buildKyberSwap } from "@/lib/kyberswap";
 import { playAlertBeep } from "@/lib/audio";
+import { setApiKeys, getAlchemyRpcUrl, getAlchemyWsUrl, markKeyRateLimited } from "@/lib/apiKeyRotation";
 
 interface MonitorContextType {
   status: ConnectionStatus;
@@ -77,8 +78,17 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
   const loadSettings = useCallback(async (): Promise<AppSettings | null> => {
     const { data } = await supabase.from("settings").select("*").eq("id", 1).single();
     if (data && data.alchemy_api_key && data.wallet_private_key) {
+      const rawData = data as Record<string, unknown>;
+      const keys: string[] = (rawData.alchemy_api_keys as string[]) || [data.alchemy_api_key];
+      const validKeys = keys.filter((k: string) => k.trim().length > 0);
+      if (validKeys.length === 0) validKeys.push(data.alchemy_api_key);
+      
+      // Initialize API key rotation
+      setApiKeys(validKeys);
+      
       const s: AppSettings = {
-        alchemyApiKey: data.alchemy_api_key,
+        alchemyApiKey: validKeys[0],
+        alchemyApiKeys: validKeys,
         walletPrivateKey: data.wallet_private_key,
         autoSellEnabled: data.auto_sell_enabled ?? true,
       };
