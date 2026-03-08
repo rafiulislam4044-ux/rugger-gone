@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useMonitor } from "@/contexts/MonitorContext";
 import { ERC20_ABI, KYBERSWAP_ROUTER, WETH_BASE, GAS_REFRESH_INTERVAL } from "@/lib/constants";
 import { getKyberRoute, buildKyberSwap } from "@/lib/kyberswap";
+import { getAlchemyRpcUrl, getAlchemyWsUrl } from "@/lib/apiKeyRotation";
 
 interface SnipeWallet {
   id: number;
@@ -182,9 +183,7 @@ export function SnipeProvider({ children }: { children: React.ReactNode }) {
     const cfg = configRef.current;
     if (!cfg) return;
 
-    const provider = new ethers.JsonRpcProvider(
-      `https://base-mainnet.g.alchemy.com/v2/${settings.alchemyApiKey}`
-    );
+    const provider = new ethers.JsonRpcProvider(getAlchemyRpcUrl());
     const wallet = new ethers.Wallet(settings.walletPrivateKey, provider);
 
     addTerminalMessage(`🎯 SNIPE BUY: Token ${tokenAddress} detected from ${fundedWallet}`);
@@ -337,7 +336,7 @@ export function SnipeProvider({ children }: { children: React.ReactNode }) {
   const watchFundedWallet = useCallback((fundedWallet: string, sourceWallet: string) => {
     if (!settings || layer2WsRefs.current[fundedWallet]) return;
 
-    const wsUrl = `wss://base-mainnet.g.alchemy.com/v2/${settings.alchemyApiKey}`;
+    const wsUrl = getAlchemyWsUrl();
     const ws = new WebSocket(wsUrl);
     layer2WsRefs.current[fundedWallet] = ws;
 
@@ -361,9 +360,7 @@ export function SnipeProvider({ children }: { children: React.ReactNode }) {
             logActivity(fundedWallet, "token_creation_detected", "Contract deployment detected", tx.hash);
 
             // Get the created contract address from the receipt
-            const provider = new ethers.JsonRpcProvider(
-              `https://base-mainnet.g.alchemy.com/v2/${settings!.alchemyApiKey}`
-            );
+            const provider = new ethers.JsonRpcProvider(getAlchemyRpcUrl());
             provider.waitForTransaction(tx.hash).then(async (receipt) => {
               if (receipt?.contractAddress) {
                 addTerminalMessage(`📝 New contract: ${receipt.contractAddress}`);
@@ -391,7 +388,7 @@ export function SnipeProvider({ children }: { children: React.ReactNode }) {
   // Layer 1: Watch tracked wallets for ETH transfers
   const startLayer1 = useCallback((activeWallets: SnipeWallet[]) => {
     if (!settings) return;
-    const wsUrl = `wss://base-mainnet.g.alchemy.com/v2/${settings.alchemyApiKey}`;
+    const wsUrl = getAlchemyWsUrl();
 
     for (const w of activeWallets) {
       const ws = new WebSocket(wsUrl);
@@ -447,9 +444,7 @@ export function SnipeProvider({ children }: { children: React.ReactNode }) {
   // Gas cache for snipe buys
   const startGasCache = useCallback(() => {
     if (!settings) return;
-    const provider = new ethers.JsonRpcProvider(
-      `https://base-mainnet.g.alchemy.com/v2/${settings.alchemyApiKey}`
-    );
+    const provider = new ethers.JsonRpcProvider(getAlchemyRpcUrl());
     const refresh = async () => {
       try {
         const feeData = await provider.getFeeData();
@@ -481,9 +476,7 @@ export function SnipeProvider({ children }: { children: React.ReactNode }) {
 
       if (!activeBuys?.length) return;
 
-      const provider = new ethers.JsonRpcProvider(
-        `https://base-mainnet.g.alchemy.com/v2/${settings!.alchemyApiKey}`
-      );
+      const provider = new ethers.JsonRpcProvider(getAlchemyRpcUrl());
       const wallet = new ethers.Wallet(settings!.walletPrivateKey, provider);
 
       for (const buy of activeBuys) {
