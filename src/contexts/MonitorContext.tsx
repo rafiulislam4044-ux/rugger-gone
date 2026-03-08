@@ -62,6 +62,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
   const gasIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const kyberIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cleanupIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const balanceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const monitoringTokenRef = useRef<string | null>(null);
   const settingsRef = useRef<AppSettings | null>(null);
   const needsApprovalRef = useRef(true);
@@ -437,10 +438,25 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
         if (data.params?.result) {
           const log = data.params.result;
           const hash = log.transactionHash;
+
+          // Check if we already have decoded data from WS1 (pending)
           const pending = pendingTransfers.current[hash];
           if (pending) {
             delete pendingTransfers.current[hash];
             processDangerTransfer(pending.from, pending.to, pending.amount, hash, tokenAddress);
+          } else {
+            // CRITICAL FIX: Decode Transfer event directly from confirmed log
+            // WS1 often misses pending txs — we must not silently drop confirmed transfers
+            const topics = log.topics;
+            if (topics && topics.length >= 3 && topics[0] === TRANSFER_TOPIC) {
+              const from = "0x" + topics[1].slice(26);
+              const to = "0x" + topics[2].slice(26);
+              const amount = log.data ? BigInt(log.data) : 0n;
+              if (amount > 0n) {
+                terminal(`🔍 Confirmed transfer detected (direct from log): ${from.slice(0, 10)}... → ${to.slice(0, 10)}...`);
+                processDangerTransfer(from, to, amount, hash, tokenAddress);
+              }
+            }
           }
         }
       } catch { /* ignore */ }
@@ -579,6 +595,26 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     // STEP 3 — WebSockets
     terminal("🔄 Opening WebSocket connections...");
     openWebSockets(tokenAddress);
+
+    // STEP 4 — Periodic balance refresh (every 10s)
+    balanceIntervalRef.current = setInterval(async () => {
+      try {
+        const p = getProvider();
+        const w = getWallet(s.walletPrivateKey, p);
+        const tc = new ethers.Contract(tokenAddress, ERC20_ABI, p);
+        const [balance, decimals] = await Promise.all([
+          tc.balanceOf(w.address),
+          tc.decimals(),
+        ]);
+        const formatted = ethers.formatUnits(balance, decimals);
+        const prev = tokenInfoRef.current;
+        if (prev && prev.balance !== formatted) {
+          const updated = { ...prev, balance: formatted };
+          setTokenInfo(updated);
+          tokenInfoRef.current = updated;
+        }
+      } catch { /* silent */ }
+    }, 10000);
   }, [getProvider, getWallet, startGasCache, prefetchKyberSwapRoute, startKyberRefresh, openWebSockets, terminal]);
 
   const stopMonitoring = useCallback(async () => {
@@ -590,6 +626,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     if (gasIntervalRef.current) clearInterval(gasIntervalRef.current);
     if (kyberIntervalRef.current) clearInterval(kyberIntervalRef.current);
     if (cleanupIntervalRef.current) clearInterval(cleanupIntervalRef.current);
+    if (balanceIntervalRef.current) clearInterval(balanceIntervalRef.current);
     gasCache.current = null;
     kyberCache.current = null;
     prebuiltTx.current = null;
