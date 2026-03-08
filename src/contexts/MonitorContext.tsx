@@ -617,26 +617,26 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     terminal("🔄 Starting gas cache...");
     startGasCache(provider);
 
-    terminal("🔄 Checking KyberSwap allowance...");
+    terminal("🔄 Pre-approving KyberSwap router (MaxUint256)...");
     try {
-      const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
-      const [allowance, balance] = await Promise.all([
-        tokenContract.allowance(wallet.address, KYBERSWAP_ROUTER),
-        tokenContract.balanceOf(wallet.address),
-      ]);
-      if (allowance >= balance && balance > 0n) {
+      const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
+      const allowance = await tokenContract.allowance(wallet.address, KYBERSWAP_ROUTER);
+      if (allowance > 0n && allowance >= ethers.MaxUint256 / 2n) {
         needsApprovalRef.current = false;
         setNeedsApproval(false);
         setSellReady(true);
-        terminal("✅ Already approved — instant sell ready");
+        terminal("✅ Already approved (MaxUint256) — instant sell ready");
       } else {
-        needsApprovalRef.current = true;
-        setNeedsApproval(true);
-        setSellReady(false);
-        terminal("⚠️ Not yet approved — first sell will take 3-5s extra for approval");
+        // Approve NOW at monitoring start so sells are instant
+        const approveTx = await tokenContract.approve(KYBERSWAP_ROUTER, ethers.MaxUint256);
+        await approveTx.wait();
+        needsApprovalRef.current = false;
+        setNeedsApproval(false);
+        setSellReady(true);
+        terminal("✅ Approved KyberSwap router — sells will be instant");
       }
-    } catch {
-      terminal("⚠️ Could not check allowance");
+    } catch (err: unknown) {
+      terminal(`⚠️ Approval failed: ${err instanceof Error ? err.message : 'Unknown'} — will retry during sell`);
     }
 
     terminal("🔄 Pre-fetching KyberSwap route...");
