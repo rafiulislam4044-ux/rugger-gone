@@ -119,40 +119,59 @@ export default function HistorySnipeByPage() {
 
       addLog(`Found ${outTransfers.length} outgoing + ${inTransfers.length} incoming transfers`);
 
-      // Collect all unique related wallets
-      const allUniqueWallets = new Set<string>();
-      const walletTxMap: Record<string, { ethAmount: string; txHash: string; timestamp: string; direction: string }> = {};
+      // Collect unique wallets that RECEIVED funds (outgoing transfers) — latest 7 only
+      const seenWallets = new Set<string>();
+      const latestFunded: { wallet: string; ethAmount: string; txHash: string; timestamp: string }[] = [];
 
-      // Outgoing: recipient wallets
-      for (const t of outTransfers) {
-        if (t.to && t.to.toLowerCase() !== addr.toLowerCase()) {
-          const w = t.to.toLowerCase();
-          allUniqueWallets.add(w);
-          if (!walletTxMap[w]) walletTxMap[w] = { ethAmount: t.value?.toString() || "0", txHash: t.hash, timestamp: t.metadata?.blockTimestamp || "", direction: "OUT" };
+      // Sort outgoing by most recent first
+      const allOut = [...outTransfers].sort((a: any, b: any) =>
+        new Date(b.metadata?.blockTimestamp || 0).getTime() - new Date(a.metadata?.blockTimestamp || 0).getTime()
+      );
+
+      for (const t of allOut) {
+        if (latestFunded.length >= 7) break;
+        const to = t.to?.toLowerCase();
+        if (to && to !== addr.toLowerCase() && !seenWallets.has(to)) {
+          seenWallets.add(to);
+          latestFunded.push({
+            wallet: to,
+            ethAmount: t.value?.toString() || "0",
+            txHash: t.hash,
+            timestamp: t.metadata?.blockTimestamp || "",
+          });
         }
       }
 
-      // Incoming: sender wallets
-      for (const t of inTransfers) {
-        if (t.from && t.from.toLowerCase() !== addr.toLowerCase()) {
-          const w = t.from.toLowerCase();
-          allUniqueWallets.add(w);
-          if (!walletTxMap[w]) walletTxMap[w] = { ethAmount: t.value?.toString() || "0", txHash: t.hash, timestamp: t.metadata?.blockTimestamp || "", direction: "IN" };
+      // If no outgoing, check incoming senders instead (latest 7)
+      if (latestFunded.length === 0) {
+        const allIn = [...inTransfers].sort((a: any, b: any) =>
+          new Date(b.metadata?.blockTimestamp || 0).getTime() - new Date(a.metadata?.blockTimestamp || 0).getTime()
+        );
+        for (const t of allIn) {
+          if (latestFunded.length >= 7) break;
+          const from = t.from?.toLowerCase();
+          if (from && from !== addr.toLowerCase() && !seenWallets.has(from)) {
+            seenWallets.add(from);
+            latestFunded.push({
+              wallet: from,
+              ethAmount: t.value?.toString() || "0",
+              txHash: t.hash,
+              timestamp: t.metadata?.blockTimestamp || "",
+            });
+          }
         }
+        addLog(`No outgoing found. Checking latest ${latestFunded.length} incoming senders instead`);
       }
 
-      addLog(`${allUniqueWallets.size} unique related wallets to check`);
+      addLog(`Checking latest ${latestFunded.length} funded wallets for token creation...`);
 
       const foundTraces: FundingTrace[] = [];
 
-      // Step 2: For each related wallet, check if it deployed a contract (token)
-      for (const walletAddr of allUniqueWallets) {
-        const fundedWallet = walletAddr;
-        const info = walletTxMap[walletAddr] || { ethAmount: "0", txHash: "", timestamp: "", direction: "?" };
-        const ethAmount = info.ethAmount;
-        const txHash = info.txHash;
-        const timestamp = info.timestamp;
-        addLog(`Checking wallet (${info.direction}): ${fundedWallet.slice(0, 10)}...`);
+      // Check all 7 wallets IN PARALLEL for speed
+      const checkResults = await Promise.allSettled(
+        latestFunded.map(async (entry) => {
+          const fundedWallet = entry.wallet;
+          addLog(`Checking wallet: ${fundedWallet.slice(0, 10)}...`);
 
         try {
           // Get transactions FROM the funded wallet to find contract creation
