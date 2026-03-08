@@ -61,7 +61,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
   const prebuiltTx = useRef<PrebuiltTx | null>(null);
   const gasIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const kyberIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const cleanupIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const balanceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const monitoringTokenRef = useRef<string | null>(null);
   const settingsRef = useRef<AppSettings | null>(null);
   const needsApprovalRef = useRef(true);
