@@ -6,7 +6,7 @@ import { useMonitor } from "@/contexts/MonitorContext";
 
 export default function SettingsPage() {
   const { loadSettings } = useMonitor();
-  const [alchemyKey, setAlchemyKey] = useState("");
+  const [apiKeys, setApiKeys] = useState<string[]>([""]);
   const [privateKey, setPrivateKey] = useState("");
   const [autoSell, setAutoSell] = useState(true);
   const [walletAddress, setWalletAddress] = useState("");
@@ -16,7 +16,13 @@ export default function SettingsPage() {
     (async () => {
       const { data } = await supabase.from("settings").select("*").eq("id", 1).single();
       if (data) {
-        setAlchemyKey(data.alchemy_api_key || "");
+        // Load multiple keys if available, fallback to single key
+        const keys: string[] = (data as Record<string, unknown>).alchemy_api_keys as string[] || [];
+        if (keys.length > 0) {
+          setApiKeys(keys);
+        } else if (data.alchemy_api_key) {
+          setApiKeys([data.alchemy_api_key]);
+        }
         setPrivateKey(data.wallet_private_key || "");
         setAutoSell(data.auto_sell_enabled ?? true);
         if (data.wallet_private_key) {
@@ -43,20 +49,42 @@ export default function SettingsPage() {
   }, [privateKey]);
 
   const handleSave = async () => {
+    const validKeys = apiKeys.filter((k) => k.trim().length > 0);
+    if (validKeys.length === 0) {
+      toast.error("Add at least one API key");
+      return;
+    }
     setSaving(true);
     const { error } = await supabase.from("settings").upsert({
       id: 1,
-      alchemy_api_key: alchemyKey,
+      alchemy_api_key: validKeys[0], // Primary key for backward compatibility
+      alchemy_api_keys: validKeys,
       wallet_private_key: privateKey,
       auto_sell_enabled: autoSell,
-    });
+    } as Record<string, unknown>);
     if (error) {
       toast.error("Failed to save settings");
     } else {
-      toast.success("Settings saved ✅");
+      toast.success(`Settings saved ✅ (${validKeys.length} API key${validKeys.length > 1 ? "s" : ""})`);
       await loadSettings();
     }
     setSaving(false);
+  };
+
+  const addKey = () => {
+    if (apiKeys.length >= 10) return;
+    setApiKeys([...apiKeys, ""]);
+  };
+
+  const removeKey = (index: number) => {
+    if (apiKeys.length <= 1) return;
+    setApiKeys(apiKeys.filter((_, i) => i !== index));
+  };
+
+  const updateKey = (index: number, value: string) => {
+    const next = [...apiKeys];
+    next[index] = value;
+    setApiKeys(next);
   };
 
   return (
@@ -68,15 +96,44 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-4">
+        {/* Multiple Alchemy API Keys */}
         <div>
-          <label className="mb-1 block text-sm text-muted-foreground font-display">Alchemy API Key</label>
-          <input
-            type="password"
-            value={alchemyKey}
-            onChange={(e) => setAlchemyKey(e.target.value)}
-            placeholder="Enter Alchemy API Key"
-            className="w-full rounded-md border border-border bg-input px-3 py-2 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-          />
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-sm text-muted-foreground font-display">
+              Alchemy API Keys ({apiKeys.filter((k) => k.trim()).length})
+            </label>
+            <button
+              onClick={addKey}
+              disabled={apiKeys.length >= 10}
+              className="rounded-md bg-secondary px-2 py-0.5 text-xs font-semibold text-secondary-foreground disabled:opacity-50"
+            >
+              + ADD KEY
+            </button>
+          </div>
+          <div className="space-y-2">
+            {apiKeys.map((key, i) => (
+              <div key={i} className="flex gap-2 items-center">
+                <span className="text-xs text-muted-foreground w-5 text-right font-mono">{i + 1}.</span>
+                <input
+                  type="password"
+                  value={key}
+                  onChange={(e) => updateKey(i, e.target.value)}
+                  placeholder={`API Key #${i + 1}`}
+                  className="flex-1 rounded-md border border-border bg-input px-3 py-2 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+                {apiKeys.length > 1 && (
+                  <button
+                    onClick={() => removeKey(i)}
+                    className="text-danger hover:text-danger/80 text-xs"
+                  >🗑️</button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 rounded-md bg-secondary/10 border border-secondary/30 p-2 text-xs text-secondary">
+            🔄 Auto-rotation: When one key hits rate limits, the system automatically switches to the next key.
+            Add multiple keys for uninterrupted monitoring.
+          </div>
         </div>
 
         <div>
