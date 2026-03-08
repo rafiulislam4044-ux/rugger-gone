@@ -626,6 +626,7 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     if (gasIntervalRef.current) clearInterval(gasIntervalRef.current);
     if (kyberIntervalRef.current) clearInterval(kyberIntervalRef.current);
     if (cleanupIntervalRef.current) clearInterval(cleanupIntervalRef.current);
+    if (balanceIntervalRef.current) clearInterval(balanceIntervalRef.current);
     gasCache.current = null;
     kyberCache.current = null;
     prebuiltTx.current = null;
