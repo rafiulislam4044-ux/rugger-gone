@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -20,11 +21,22 @@ const queryClient = new QueryClient();
 
 function ProtectedApp() {
   const { user, loading } = useAuth();
+  const [timedOut, setTimedOut] = useState(false);
 
-  if (loading) {
+  useEffect(() => {
+    if (loading) {
+      const timer = setTimeout(() => setTimedOut(true), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [loading]);
+
+  if (loading && !timedOut) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="font-display text-muted-foreground animate-pulse">Loading...</p>
+        <div className="text-center space-y-3">
+          <p className="font-display text-2xl text-foreground animate-pulse">🔍 RUGGER GONE</p>
+          <p className="font-display text-sm text-muted-foreground">Connecting to backend...</p>
+        </div>
       </div>
     );
   }
