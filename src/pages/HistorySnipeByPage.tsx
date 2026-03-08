@@ -174,46 +174,60 @@ export default function HistorySnipeByPage() {
           addLog(`Checking wallet: ${fundedWallet.slice(0, 10)}...`);
 
           try {
-            // Get transactions FROM the funded wallet to find contract creation
-            const txListRes = await fetch(rpcUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                jsonrpc: "2.0", id: 2,
-                method: "alchemy_getAssetTransfers",
-                params: [{ fromAddress: fundedWallet, category: ["external", "erc20"], order: "asc", maxCount: "0x14", withMetadata: true }],
-              }),
-            });
-
-            const txListData = await txListRes.json();
-            const fundedTxs = txListData?.result?.transfers || [];
-
             let tokenCreated: string | null = null;
             let tokenName: string | null = null;
             let tokenSymbol: string | null = null;
 
-            // Check tx receipts for contract creation
-            for (const ftx of fundedTxs.slice(0, 5)) {
-              try {
-                const receipt = await provider.getTransactionReceipt(ftx.hash);
-                if (receipt && receipt.contractAddress) {
-                  tokenCreated = receipt.contractAddress;
-                  try {
-                    const tokenContract = new ethers.Contract(tokenCreated, [
-                      "function name() view returns (string)",
-                      "function symbol() view returns (string)",
-                    ], provider);
-                    const [name, symbol] = await Promise.all([
-                      tokenContract.name().catch(() => null),
-                      tokenContract.symbol().catch(() => null),
-                    ]);
-                    tokenName = name;
-                    tokenSymbol = symbol;
+            // Method: Check CREATE addresses by nonce (most reliable)
+            // Get the wallet's nonce to know how many txs it sent
+            const nonce = await provider.getTransactionCount(fundedWallet);
+            const maxCheck = Math.min(nonce, 15); // check first 15 nonces
+
+            if (maxCheck > 0) {
+              addLog(`Wallet ${fundedWallet.slice(0, 10)} has ${nonce} txs, checking ${maxCheck} CREATE addresses...`);
+
+              // Check all CREATE addresses in parallel
+              const createChecks = [];
+              for (let i = 0; i < maxCheck; i++) {
+                const contractAddr = ethers.getCreateAddress({ from: fundedWallet, nonce: i });
+                createChecks.push(
+                  provider.getCode(contractAddr).then(code => ({
+                    address: contractAddr,
+                    nonce: i,
+                    hasCode: code !== "0x" && code.length > 2,
+                  })).catch(() => ({ address: contractAddr, nonce: i, hasCode: false }))
+                );
+              }
+
+              const createResults = await Promise.all(createChecks);
+              const deployed = createResults.filter(r => r.hasCode);
+
+              if (deployed.length > 0) {
+                // Use the first deployed contract (most likely the token)
+                tokenCreated = deployed[0].address;
+                addLog(`Found contract at nonce ${deployed[0].nonce}: ${tokenCreated.slice(0, 12)}...`);
+
+                // Try to get token name/symbol
+                try {
+                  const tokenContract = new ethers.Contract(tokenCreated, [
+                    "function name() view returns (string)",
+                    "function symbol() view returns (string)",
+                  ], provider);
+                  const [name, symbol] = await Promise.all([
+                    tokenContract.name().catch(() => null),
+                    tokenContract.symbol().catch(() => null),
+                  ]);
+                  tokenName = name;
+                  tokenSymbol = symbol;
+                  if (name || symbol) {
                     addLog(`🎯 Token: ${name} (${symbol}) by ${fundedWallet.slice(0, 10)}`, "success");
-                  } catch {}
-                  break;
-                }
-              } catch {}
+                  } else {
+                    addLog(`📄 Contract (not ERC20) by ${fundedWallet.slice(0, 10)}`, "info");
+                  }
+                } catch {}
+              }
+            } else {
+              addLog(`Wallet ${fundedWallet.slice(0, 10)} has 0 txs (no deployments)`);
             }
 
             return {
