@@ -595,6 +595,26 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     // STEP 3 — WebSockets
     terminal("🔄 Opening WebSocket connections...");
     openWebSockets(tokenAddress);
+
+    // STEP 4 — Periodic balance refresh (every 10s)
+    balanceIntervalRef.current = setInterval(async () => {
+      try {
+        const p = getProvider();
+        const w = getWallet(s.walletPrivateKey, p);
+        const tc = new ethers.Contract(tokenAddress, ERC20_ABI, p);
+        const [balance, decimals] = await Promise.all([
+          tc.balanceOf(w.address),
+          tc.decimals(),
+        ]);
+        const formatted = ethers.formatUnits(balance, decimals);
+        const prev = tokenInfoRef.current;
+        if (prev && prev.balance !== formatted) {
+          const updated = { ...prev, balance: formatted };
+          setTokenInfo(updated);
+          tokenInfoRef.current = updated;
+        }
+      } catch { /* silent */ }
+    }, 10000);
   }, [getProvider, getWallet, startGasCache, prefetchKyberSwapRoute, startKyberRefresh, openWebSockets, terminal]);
 
   const stopMonitoring = useCallback(async () => {
