@@ -196,6 +196,183 @@ export type Database = {
         }
         Relationships: []
       }
+      snipe_activity_log: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          event_type: string
+          id: number
+          tx_hash: string | null
+          wallet_address: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          event_type: string
+          id?: never
+          tx_hash?: string | null
+          wallet_address: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          event_type?: string
+          id?: never
+          tx_hash?: string | null
+          wallet_address?: string
+        }
+        Relationships: []
+      }
+      snipe_buys: {
+        Row: {
+          auto_monitor_started: boolean | null
+          buy_amount_eth: string | null
+          buy_price_eth: string | null
+          buy_tx_hash: string | null
+          created_at: string | null
+          current_price_eth: string | null
+          funded_wallet: string
+          id: number
+          pnl_percent: number | null
+          profit_taken: boolean | null
+          source_wallet: string
+          status: string
+          stop_loss_triggered: boolean | null
+          token_address: string
+          token_name: string | null
+          token_symbol: string | null
+        }
+        Insert: {
+          auto_monitor_started?: boolean | null
+          buy_amount_eth?: string | null
+          buy_price_eth?: string | null
+          buy_tx_hash?: string | null
+          created_at?: string | null
+          current_price_eth?: string | null
+          funded_wallet: string
+          id?: never
+          pnl_percent?: number | null
+          profit_taken?: boolean | null
+          source_wallet: string
+          status?: string
+          stop_loss_triggered?: boolean | null
+          token_address: string
+          token_name?: string | null
+          token_symbol?: string | null
+        }
+        Update: {
+          auto_monitor_started?: boolean | null
+          buy_amount_eth?: string | null
+          buy_price_eth?: string | null
+          buy_tx_hash?: string | null
+          created_at?: string | null
+          current_price_eth?: string | null
+          funded_wallet?: string
+          id?: never
+          pnl_percent?: number | null
+          profit_taken?: boolean | null
+          source_wallet?: string
+          status?: string
+          stop_loss_triggered?: boolean | null
+          token_address?: string
+          token_name?: string | null
+          token_symbol?: string | null
+        }
+        Relationships: []
+      }
+      snipe_config: {
+        Row: {
+          buy_amount_eth: string
+          id: number
+          is_enabled: boolean
+          profit_sell_percent: number
+          profit_take_percent: number
+          stop_loss_percent: number
+          updated_at: string | null
+          watch_timeout_hours: number
+        }
+        Insert: {
+          buy_amount_eth?: string
+          id?: number
+          is_enabled?: boolean
+          profit_sell_percent?: number
+          profit_take_percent?: number
+          stop_loss_percent?: number
+          updated_at?: string | null
+          watch_timeout_hours?: number
+        }
+        Update: {
+          buy_amount_eth?: string
+          id?: number
+          is_enabled?: boolean
+          profit_sell_percent?: number
+          profit_take_percent?: number
+          stop_loss_percent?: number
+          updated_at?: string | null
+          watch_timeout_hours?: number
+        }
+        Relationships: []
+      }
+      snipe_wallets: {
+        Row: {
+          added_at: string | null
+          id: number
+          is_active: boolean
+          label: string | null
+          wallet_address: string
+        }
+        Insert: {
+          added_at?: string | null
+          id?: never
+          is_active?: boolean
+          label?: string | null
+          wallet_address: string
+        }
+        Update: {
+          added_at?: string | null
+          id?: never
+          is_active?: boolean
+          label?: string | null
+          wallet_address?: string
+        }
+        Relationships: []
+      }
+      snipe_watched_wallets: {
+        Row: {
+          detected_at: string | null
+          eth_amount: string | null
+          expires_at: string | null
+          funded_wallet: string
+          funding_tx_hash: string | null
+          id: number
+          is_active: boolean
+          source_wallet: string
+          token_created: string | null
+        }
+        Insert: {
+          detected_at?: string | null
+          eth_amount?: string | null
+          expires_at?: string | null
+          funded_wallet: string
+          funding_tx_hash?: string | null
+          id?: never
+          is_active?: boolean
+          source_wallet: string
+          token_created?: string | null
+        }
+        Update: {
+          detected_at?: string | null
+          eth_amount?: string | null
+          expires_at?: string | null
+          funded_wallet?: string
+          funding_tx_hash?: string | null
+          id?: never
+          is_active?: boolean
+          source_wallet?: string
+          token_created?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
