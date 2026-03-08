@@ -1,5 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { useMonitor } from "@/contexts/MonitorContext";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function Header() {
   const { status, tokenInfo, reconnectAttempt } = useMonitor();
@@ -53,6 +54,7 @@ export default function Header() {
               {item.label}
             </Link>
           ))}
+          <LogoutButton />
         </nav>
       </div>
     </header>
