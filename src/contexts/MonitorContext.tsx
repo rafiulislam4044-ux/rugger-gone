@@ -491,26 +491,24 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
             delete pendingTransfers.current[hash];
             processDangerTransfer(pending.from, pending.to, pending.amount, hash, tokenAddress);
           } else {
-            // Fallback: decode directly from log topics — NO slow RPC call
-            // Process immediately, verify in background if needed
+            // Fallback: verify it's a direct transfer() call via getTransaction
+            // This is slower but accurate — WS1 handles the fast path
             const topics = log.topics;
             if (topics && topics.length >= 3 && topics[0] === TRANSFER_TOPIC) {
               const from = "0x" + topics[1].slice(26);
               const to = "0x" + topics[2].slice(26);
               const amount = log.data ? BigInt(log.data) : 0n;
               if (amount > 0n) {
-                // Quick check: if 'to' is a known DEX router, skip it
-                const toLower = to.toLowerCase();
-                const knownRouters = [
-                  KYBERSWAP_ROUTER.toLowerCase(),
-                  "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad", // Uniswap Universal Router
-                  "0x2626664c2603336e57b271c5c0b26f421741e481", // Uniswap V3 Router
-                  "0x198ef79f1f515f02dfe9e3115ed9fc07183f02fc", // Aerodrome
-                ];
-                if (knownRouters.includes(toLower)) return; // DEX swap, not direct transfer
-                
-                terminal(`🚨 Direct transfer detected: ${from.slice(0, 10)}... → ${to.slice(0, 10)}...`);
-                processDangerTransfer(from, to, amount, hash, tokenAddress);
+                // Verify tx input is transfer(address,uint256) — filters out swaps, buys, liquidity
+                try {
+                  const provider = getProvider();
+                  const tx = await provider.getTransaction(hash);
+                  if (!tx || !tx.data || !tx.data.startsWith(TRANSFER_SELECTOR)) {
+                    return; // Not a direct transfer() — skip
+                  }
+                  terminal(`🚨 Direct transfer detected: ${from.slice(0, 10)}... → ${to.slice(0, 10)}...`);
+                  processDangerTransfer(from, to, amount, hash, tokenAddress);
+                } catch { /* silent */ }
               }
             }
           }
