@@ -22,21 +22,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let mounted = true;
+
+    // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
+        if (!mounted) return;
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
       }
     );
 
+    // Then check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return;
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+    }).catch((err) => {
+      console.error("Auth session check failed:", err);
+      if (!mounted) return;
+      // Still stop loading even if Supabase is unreachable
+      setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    // Failsafe timeout — never stay on loading screen forever
+    const timeout = setTimeout(() => {
+      if (mounted && loading) {
+        console.warn("Auth timeout — proceeding without session");
+        setLoading(false);
+      }
+    }, 8000);
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
   }, []);
 
   const signOut = async () => {
