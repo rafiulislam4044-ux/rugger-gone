@@ -422,7 +422,22 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
       terminal("🔄 No pre-built TX — using fast sell fallback...");
       executeSellFast(tokenAddress);
     }
-  }, [addDangerTransfer]);
+
+    // Save to Supabase AFTER sell fires — non-blocking, don't await
+    supabase.from("danger_transfers").insert({
+      token_address: dt.tokenAddress,
+      token_name: dt.tokenName,
+      token_symbol: dt.tokenSymbol,
+      from_wallet: dt.fromWallet,
+      to_wallet: dt.toWallet,
+      amount: dt.amount,
+      tx_hash: dt.txHash,
+      wallet_position: dt.walletPosition,
+      transfer_count: dt.transferCount,
+      sell_status: "pending",
+      source: "live",
+    }).then(() => {}).catch(() => {});
+  }, [addDangerTransfer, getProvider, getWallet, terminal, executeSellFast, updateSupabaseAfterSell]);
 
   const openWebSockets = useCallback((tokenAddress: string, _apiKey?: string) => {
     const wsUrl = getAlchemyWsUrl();
