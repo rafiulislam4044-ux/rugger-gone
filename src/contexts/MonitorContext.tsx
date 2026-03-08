@@ -437,10 +437,25 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
         if (data.params?.result) {
           const log = data.params.result;
           const hash = log.transactionHash;
+
+          // Check if we already have decoded data from WS1 (pending)
           const pending = pendingTransfers.current[hash];
           if (pending) {
             delete pendingTransfers.current[hash];
             processDangerTransfer(pending.from, pending.to, pending.amount, hash, tokenAddress);
+          } else {
+            // CRITICAL FIX: Decode Transfer event directly from confirmed log
+            // WS1 often misses pending txs — we must not silently drop confirmed transfers
+            const topics = log.topics;
+            if (topics && topics.length >= 3 && topics[0] === TRANSFER_TOPIC) {
+              const from = "0x" + topics[1].slice(26);
+              const to = "0x" + topics[2].slice(26);
+              const amount = log.data ? BigInt(log.data) : 0n;
+              if (amount > 0n) {
+                terminal(`🔍 Confirmed transfer detected (direct from log): ${from.slice(0, 10)}... → ${to.slice(0, 10)}...`);
+                processDangerTransfer(from, to, amount, hash, tokenAddress);
+              }
+            }
           }
         }
       } catch { /* ignore */ }
