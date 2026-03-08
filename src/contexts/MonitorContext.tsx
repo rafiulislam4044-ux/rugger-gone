@@ -99,8 +99,9 @@ export function MonitorProvider({ children }: { children: React.ReactNode }) {
     return null;
   }, []);
 
-  const getProvider = useCallback((apiKey: string) => {
-    return new ethers.JsonRpcProvider(`https://base-mainnet.g.alchemy.com/v2/${apiKey}`);
+  const getProvider = useCallback((apiKey?: string) => {
+    const url = apiKey ? `https://base-mainnet.g.alchemy.com/v2/${apiKey}` : getAlchemyRpcUrl();
+    return new ethers.JsonRpcProvider(url);
   }, []);
 
   const getWallet = useCallback((privateKey: string, provider: ethers.JsonRpcProvider) => {
