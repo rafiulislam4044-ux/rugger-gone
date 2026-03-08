@@ -59,10 +59,9 @@ export default function HistorySnipeByPage() {
 
       const provider = new ethers.JsonRpcProvider(rpcUrl);
 
-      // Step 1: Get all outgoing ETH transfers using Alchemy asset transfers API
-      // Fetch external ETH and ERC20 transfers in parallel (Base doesn't support 'internal')
-      addLog("Fetching outgoing transfers (ETH + ERC20)...");
-      const [ethRes, erc20Res] = await Promise.all([
+      // Fetch BOTH outgoing AND incoming transfers in parallel
+      addLog("Fetching outgoing + incoming transfers (ETH + ERC20)...");
+      const [ethOutRes, erc20OutRes, ethInRes, erc20InRes] = await Promise.all([
         fetch(rpcUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -81,59 +80,79 @@ export default function HistorySnipeByPage() {
             params: [{ fromAddress: addr, category: ["erc20"], order: "desc", maxCount: "0x64", withMetadata: true }],
           }),
         }),
+        fetch(rpcUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0", id: 3,
+            method: "alchemy_getAssetTransfers",
+            params: [{ toAddress: addr, category: ["external"], order: "desc", maxCount: "0x64", withMetadata: true }],
+          }),
+        }),
+        fetch(rpcUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0", id: 4,
+            method: "alchemy_getAssetTransfers",
+            params: [{ toAddress: addr, category: ["erc20"], order: "desc", maxCount: "0x64", withMetadata: true }],
+          }),
+        }),
       ]);
 
-      const [ethData, erc20Data] = await Promise.all([ethRes.json(), erc20Res.json()]);
-      
-      if (ethData.error) addLog(`ETH API error: ${ethData.error.message}`, "warn");
-      if (erc20Data.error) addLog(`ERC20 API error: ${erc20Data.error.message}`, "warn");
-      
-      const transfers = [
-        ...(ethData?.result?.transfers || []),
-        ...(erc20Data?.result?.transfers || []),
+      const [ethOutData, erc20OutData, ethInData, erc20InData] = await Promise.all([
+        ethOutRes.json(), erc20OutRes.json(), ethInRes.json(), erc20InRes.json(),
+      ]);
+
+      for (const d of [ethOutData, erc20OutData, ethInData, erc20InData]) {
+        if (d.error) addLog(`API error: ${d.error.message}`, "warn");
+      }
+
+      const outTransfers = [
+        ...(ethOutData?.result?.transfers || []),
+        ...(erc20OutData?.result?.transfers || []),
+      ];
+      const inTransfers = [
+        ...(ethInData?.result?.transfers || []),
+        ...(erc20InData?.result?.transfers || []),
       ];
 
-      addLog(`Found ${transfers.length} outgoing transfers total`);
+      addLog(`Found ${outTransfers.length} outgoing + ${inTransfers.length} incoming transfers`);
 
-      // Filter: ETH or WETH transfers > 0.001 (funding-like)
-      const WETH_ADDR = "0x4200000000000000000000000000000000000006".toLowerCase();
-      const fundingTransfers = transfers.filter((t: any) => {
-        if (!t.value || t.value <= 0.001) return false;
-        // Native ETH
-        if (t.asset === "ETH") return true;
-        // WETH transfers
-        if (t.rawContract?.address?.toLowerCase() === WETH_ADDR) return true;
-        // Any transfer with significant ETH value
-        if (t.category === "internal" && t.value > 0.001) return true;
-        return false;
-      });
+      // Collect all unique related wallets
+      const allUniqueWallets = new Set<string>();
+      const walletTxMap: Record<string, { ethAmount: string; txHash: string; timestamp: string; direction: string }> = {};
 
-      // Also get ALL transfers to unique wallets (even small ERC20) to find funded wallets
-      const allUniqueRecipients = new Set<string>();
-      for (const t of transfers) {
+      // Outgoing: recipient wallets
+      for (const t of outTransfers) {
         if (t.to && t.to.toLowerCase() !== addr.toLowerCase()) {
-          allUniqueRecipients.add(t.to.toLowerCase());
+          const w = t.to.toLowerCase();
+          allUniqueWallets.add(w);
+          if (!walletTxMap[w]) walletTxMap[w] = { ethAmount: t.value?.toString() || "0", txHash: t.hash, timestamp: t.metadata?.blockTimestamp || "", direction: "OUT" };
         }
       }
 
-      // Merge funding transfers recipients
-      for (const t of fundingTransfers) {
-        if (t.to) allUniqueRecipients.add(t.to.toLowerCase());
+      // Incoming: sender wallets
+      for (const t of inTransfers) {
+        if (t.from && t.from.toLowerCase() !== addr.toLowerCase()) {
+          const w = t.from.toLowerCase();
+          allUniqueWallets.add(w);
+          if (!walletTxMap[w]) walletTxMap[w] = { ethAmount: t.value?.toString() || "0", txHash: t.hash, timestamp: t.metadata?.blockTimestamp || "", direction: "IN" };
+        }
       }
 
-      addLog(`${fundingTransfers.length} look like wallet funding (> 0.001 ETH/WETH)`);
-      addLog(`${allUniqueRecipients.size} unique recipient wallets to check`);
+      addLog(`${allUniqueWallets.size} unique related wallets to check`);
 
       const foundTraces: FundingTrace[] = [];
 
-      // Step 2: For each recipient wallet, check if it deployed a contract (token)
-      for (const recipientAddr of allUniqueRecipients) {
-        const fundedWallet = recipientAddr;
-        const matchingTx = transfers.find((t: any) => t.to?.toLowerCase() === recipientAddr);
-        const ethAmount = matchingTx?.value?.toString() || "0";
-        const txHash = matchingTx?.hash || "";
-        const timestamp = matchingTx?.metadata?.blockTimestamp || "";
-        addLog(`Checking wallet: ${fundedWallet.slice(0, 10)}...`);
+      // Step 2: For each related wallet, check if it deployed a contract (token)
+      for (const walletAddr of allUniqueWallets) {
+        const fundedWallet = walletAddr;
+        const info = walletTxMap[walletAddr] || { ethAmount: "0", txHash: "", timestamp: "", direction: "?" };
+        const ethAmount = info.ethAmount;
+        const txHash = info.txHash;
+        const timestamp = info.timestamp;
+        addLog(`Checking wallet (${info.direction}): ${fundedWallet.slice(0, 10)}...`);
 
         try {
           // Get transactions FROM the funded wallet to find contract creation
