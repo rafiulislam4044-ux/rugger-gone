@@ -60,26 +60,38 @@ export default function HistorySnipeByPage() {
       const provider = new ethers.JsonRpcProvider(rpcUrl);
 
       // Step 1: Get all outgoing ETH transfers using Alchemy asset transfers API
-      addLog("Fetching ALL outgoing transfers (ETH + WETH + ERC20 + internal)...");
-      const transfersRes = await fetch(rpcUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "alchemy_getAssetTransfers",
-          params: [{
-            fromAddress: addr,
-            category: ["external", "internal", "erc20"],
-            order: "desc",
-            maxCount: "0x64", // 100
-            withMetadata: true,
-          }],
+      // Fetch external ETH and ERC20 transfers in parallel (Base doesn't support 'internal')
+      addLog("Fetching outgoing transfers (ETH + ERC20)...");
+      const [ethRes, erc20Res] = await Promise.all([
+        fetch(rpcUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0", id: 1,
+            method: "alchemy_getAssetTransfers",
+            params: [{ fromAddress: addr, category: ["external"], order: "desc", maxCount: "0x64", withMetadata: true }],
+          }),
         }),
-      });
+        fetch(rpcUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0", id: 2,
+            method: "alchemy_getAssetTransfers",
+            params: [{ fromAddress: addr, category: ["erc20"], order: "desc", maxCount: "0x64", withMetadata: true }],
+          }),
+        }),
+      ]);
 
-      const transfersData = await transfersRes.json();
-      const transfers = transfersData?.result?.transfers || [];
+      const [ethData, erc20Data] = await Promise.all([ethRes.json(), erc20Res.json()]);
+      
+      if (ethData.error) addLog(`ETH API error: ${ethData.error.message}`, "warn");
+      if (erc20Data.error) addLog(`ERC20 API error: ${erc20Data.error.message}`, "warn");
+      
+      const transfers = [
+        ...(ethData?.result?.transfers || []),
+        ...(erc20Data?.result?.transfers || []),
+      ];
 
       addLog(`Found ${transfers.length} outgoing transfers total`);
 
